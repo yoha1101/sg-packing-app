@@ -99,12 +99,21 @@ def find_info(pack_style, entries):
 
 # ── 패킹리스트 파싱 ───────────────────────────────────────
 def parse_packing(pack_bytes, entries):
-    try:
-        wb = load_workbook(io.BytesIO(pack_bytes), data_only=True, keep_vba=False)
-    except:
-        wb = load_workbook(io.BytesIO(pack_bytes), data_only=True)
-    # 패킹리스트 시트 자동 감지
-    PACK_SHEET_NAMES = ['중국', 'Sheet1', '한국', '일본', '미국', '중국시트']
+    wb = None
+    for kwargs in [
+        {'data_only': True, 'keep_vba': False},
+        {'data_only': True, 'keep_vba': True},
+        {'data_only': True},
+        {},
+    ]:
+        try:
+            wb = load_workbook(io.BytesIO(pack_bytes), **kwargs)
+            break
+        except Exception:
+            continue
+    if wb is None:
+        raise Exception("패킹리스트 파일을 읽을 수 없습니다.")
+    PACK_SHEET_NAMES = ['중국', 'Sheet1', '한국', '일본', '미국']
     ws = None
     for sh in PACK_SHEET_NAMES:
         if sh in wb.sheetnames:
