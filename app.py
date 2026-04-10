@@ -103,7 +103,13 @@ def parse_packing(pack_bytes, entries):
         wb = load_workbook(io.BytesIO(pack_bytes), data_only=True, keep_vba=False)
     except:
         wb = load_workbook(io.BytesIO(pack_bytes), data_only=True)
-    ws = wb.active
+    # 패킹리스트 시트 자동 감지
+    PACK_SHEET_NAMES = ['중국', 'Sheet1', '한국', '일본', '미국', '중국시트']
+    ws = None
+    for sh in PACK_SHEET_NAMES:
+        if sh in wb.sheetnames:
+            ws = wb[sh]; break
+    if not ws: ws = wb.active
     ctns = []; current_ctn = None; unmapped = set()
 
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
@@ -292,7 +298,12 @@ def make_category(pack_bytes, ctns):
         wb_orig = load_workbook(io.BytesIO(pack_bytes), data_only=True, keep_vba=False)
     except:
         wb_orig = load_workbook(io.BytesIO(pack_bytes), data_only=True)
-    ws_orig = wb_orig.active
+    PACK_SHEET_NAMES = ['중국', 'Sheet1', '한국', '일본', '미국', '중국시트']
+    ws_orig = None
+    for sh in PACK_SHEET_NAMES:
+        if sh in wb_orig.sheetnames:
+            ws_orig = wb_orig[sh]; break
+    if not ws_orig: ws_orig = wb_orig.active
     headers_orig = [ws_orig.cell(row=1, column=i).value for i in range(1, 12)]
 
     ctn_main = {}
@@ -328,10 +339,18 @@ def make_category(pack_bytes, ctns):
         if main and main in sheet_rows:
             sheet_rows[main].append([cell.value for cell in row])
 
-    wb_cat = Workbook(); wb_cat.remove(wb_cat.active)
+    wb_cat = Workbook()
+    # 기본 시트 이름을 임시로 바꿔두고 마지막에 삭제
+    wb_cat.active.title = '_temp'
+    first_sheet = True
     for sh in SHEET_ORDER:
         if not sheet_rows.get(sh): continue
-        ws = wb_cat.create_sheet(sh[:31])
+        if first_sheet:
+            ws = wb_cat.active
+            ws.title = sh[:31]
+            first_sheet = False
+        else:
+            ws = wb_cat.create_sheet(sh[:31])
         sh_fill = PatternFill('solid', fgColor=COLORS.get(sh, 'FFFFFF'))
 
         ws.column_dimensions['A'].width = 10
