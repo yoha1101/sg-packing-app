@@ -59,34 +59,34 @@ SHEET_ORDER = ['Snowboard Pants','Snowboard Jacket','Insulated Snowboard Jacket'
     'Beanie','Beanie(Angora)','Cap','HOOD WARMER N','BALACLAVA','Snowboard Stomppad']
 
 MAIN_COLORS = {
-    'Snowboard Pants':            'C6EFCE',  # 연두
-    'Snowboard Jacket':           'FFEB9C',  # 노랑
-    'Insulated Snowboard Jacket': 'FFC7CE',  # 연빨강
-    'Sweatpants':                 'D9D2E9',  # 연보라
-    'Sweatshirt, Hooded Sweatshirt': 'FCE4D6', # 연주황
-    'Long-sleeve Tee':            '00B0F0',  # 파랑 (진하게)
-    'T-shirt':                    'FF66CC',  # 핑크 (진하게)
-    'Beanie':                     'E2EFDA',  # 연한 민트
-    'Beanie(Angora)':             'FFF2CC',  # 크림
-    'Cap':                        'DDEBF7',  # 하늘
-    'HOOD WARMER N':              'F4CCCC',  # 연분홍
-    'BALACLAVA':                  'D9EAD3',  # 연초록
-    'Snowboard Stomppad':         'CFE2F3',  # 연파랑
+    'Snowboard Pants':               'E2F0D9',  # 연두
+    'Snowboard Jacket':              'FFF2CC',  # 연노랑
+    'Insulated Snowboard Jacket':    'FCE4D6',  # 연살구
+    'Sweatpants':                    'EAD1DC',  # 연핑크
+    'Sweatshirt, Hooded Sweatshirt': 'D9E1F2',  # 연파랑
+    'Long-sleeve Tee':               'DDEBF7',  # 하늘
+    'T-shirt':                       'F2F2F2',  # 연회색
+    'Beanie':                        'E2EFDA',  # 연민트
+    'Beanie(Angora)':                'FFF2CC',  # 크림
+    'Cap':                           'DAEEF3',  # 연하늘
+    'HOOD WARMER N':                 'F4CCCC',  # 연분홍
+    'BALACLAVA':                     'D9EAD3',  # 연초록
+    'Snowboard Stomppad':            'D9D9D9',  # 연회색2
 }
 SEC_COLORS = {
-    'Snowboard Pants':            '00B050',  # 진녹
-    'Snowboard Jacket':           'FFD700',  # 진노랑
-    'Insulated Snowboard Jacket': 'FF0000',  # 진빨강
-    'Sweatpants':                 '7030A0',  # 진보라
-    'Sweatshirt, Hooded Sweatshirt': 'F4773B', # 진주황
-    'Long-sleeve Tee':            '0070C0',  # 진파랑
-    'T-shirt':                    'FF00FF',  # 마젠타
-    'Beanie':                     '70AD47',  # 진녹2
-    'Beanie(Angora)':             'FFD966',  # 진크림
-    'Cap':                        '2E75B6',  # 진하늘
-    'HOOD WARMER N':              'EA9999',  # 진분홍
-    'BALACLAVA':                  '93C47D',  # 진초록
-    'Snowboard Stomppad':         '9FC5E8',  # 진연파랑
+    'Snowboard Pants':               'C6EFCE',  # 중간 연두
+    'Snowboard Jacket':              'FFEB9C',  # 중간 노랑
+    'Insulated Snowboard Jacket':    'F8CBAD',  # 중간 살구
+    'Sweatpants':                    'D5A6BD',  # 중간 핑크
+    'Sweatshirt, Hooded Sweatshirt': 'B4C7E7',  # 중간 파랑
+    'Long-sleeve Tee':               'BDD7EE',  # 중간 하늘
+    'T-shirt':                       'D9D9D9',  # 중간 회색
+    'Beanie':                        'C6D9B8',  # 중간 민트
+    'Beanie(Angora)':                'FFE699',  # 중간 크림
+    'Cap':                           'B8D9E8',  # 중간 하늘2
+    'HOOD WARMER N':                 'EA9999',  # 중간 분홍
+    'BALACLAVA':                     'A9C9A4',  # 중간 초록
+    'Snowboard Stomppad':            'BFBFBF',  # 중간 회색2
 }
 
 
