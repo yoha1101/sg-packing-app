@@ -1,7 +1,7 @@
 import streamlit as st
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 import re, io
 
 st.set_page_config(page_title="SG Packing Generator", layout="centered")
@@ -53,6 +53,28 @@ PRIORITY = [
     'Beanie', 'Beanie(Angora)', 'Cap', 'HOOD WARMER N', 'BALACLAVA', 'Snowboard Stomppad'
 ]
 def get_prio(d): return PRIORITY.index(d) if d in PRIORITY else 99
+
+SHEET_ORDER = ['Snowboard Pants','Snowboard Jacket','Insulated Snowboard Jacket',
+    'Sweatpants','Sweatshirt, Hooded Sweatshirt','Long-sleeve Tee','T-shirt',
+    'Beanie','Beanie(Angora)','Cap','HOOD WARMER N','BALACLAVA','Snowboard Stomppad']
+
+MAIN_COLORS = {
+    'Snowboard Pants':'DCE6F1','Snowboard Jacket':'FEF9E7',
+    'Insulated Snowboard Jacket':'EBF5FB','Sweatpants':'F9F2FF',
+    'Sweatshirt, Hooded Sweatshirt':'FEF5E7','Long-sleeve Tee':'E9F7EF',
+    'T-shirt':'FDF2F8','Beanie':'F0FFF4','Beanie(Angora)':'FFFDE7',
+    'Cap':'F3E5F5','HOOD WARMER N':'E8EAF6','BALACLAVA':'FCE4EC',
+    'Snowboard Stomppad':'E8F5E9',
+}
+SEC_COLORS = {
+    'Snowboard Pants':'BDD7EE','Snowboard Jacket':'FFEB9C',
+    'Insulated Snowboard Jacket':'9DC3E6','Sweatpants':'D5A6BD',
+    'Sweatshirt, Hooded Sweatshirt':'F4B942','Long-sleeve Tee':'A9D18E',
+    'T-shirt':'F4CCCC','Beanie':'B6D7A8','Beanie(Angora)':'FFE599',
+    'Cap':'C9B1D9','HOOD WARMER N':'9FC5E8','BALACLAVA':'EA9999',
+    'Snowboard Stomppad':'93C47D',
+}
+
 
 def get_main(items):
     totals = {}
@@ -333,7 +355,7 @@ def make_category(pack_bytes, inv_bytes):
         hs = row[1].value; style = row[2].value; fabric = row[4].value
         if not hs or not style: continue
         s = str(style).strip()
-        if s in ['Description of goods', '']: continue
+        if s in ['Description of goods','']: continue
         desc, fab_out, hs_out = get_desc_info(hs, fabric)
         if not desc: continue
         sm = re.match(r'^(\d{4})\s', s); nm = re.search(r'(\d+)\.', s)
@@ -350,7 +372,7 @@ def make_category(pack_bytes, inv_bytes):
     for sh in ['중국','Sheet1']:
         if sh in wb_pack.sheetnames: ws_pack = wb_pack[sh]; break
 
-    # CTN 파싱
+    # CTN 파싱 — 각 행의 desc 정보 포함
     ctns = []; current_ctn = None
     for row in ws_pack.iter_rows(min_row=2, max_row=ws_pack.max_row):
         ctn_no = str(row[0].value).strip() if row[0].value else ''
@@ -364,15 +386,18 @@ def make_category(pack_bytes, inv_bytes):
             ctns.append(current_ctn)
         if not current_ctn or not style: continue
         qty = 0
-        for idx in range(3, 9):
+        for idx in range(3,9):
             v = row[idx].value
             try: qty += int(v) if v else 0
             except: pass
         row_data = [cell.value for cell in row[:11]]
-        current_ctn['rows'].append((style, color, qty, row_data))
-        if qty == 0: continue
         info = find_info(style, entries)
-        if not info: continue
+        desc = info['desc'] if info else None
+        current_ctn['rows'].append({
+            'style':style,'color':color,'qty':qty,
+            'row_data':row_data,'desc':desc
+        })
+        if qty == 0 or not info: continue
         found = False
         for item in current_ctn['items']:
             if item['desc'] == info['desc']:
@@ -390,51 +415,28 @@ def make_category(pack_bytes, inv_bytes):
         cands = [d for d,q in totals.items() if q == mx]
         ctn_main[ctn['ctn_no']] = sorted(cands, key=get_prio)[0]
 
-    # CTN별 비주 품목
-    ctn_secondary = {}
-    for ctn in ctns:
-        main = ctn_main[ctn['ctn_no']]
-        sec = {}
-        for style, color, qty, row_data in ctn['rows']:
-            if qty == 0: continue
-            info = find_info(style, entries)
-            if not info or info['desc'] == main: continue
-            key = (style, color)
-            if key not in sec:
-                sec[key] = {'style':style,'color':color,'sizes':[0]*6,'desc':info['desc']}
-            for i in range(6):
-                v = row_data[3+i]
-                try: sec[key]['sizes'][i] += int(v) if v else 0
-                except: pass
-        ctn_secondary[ctn['ctn_no']] = list(sec.values())
-
-    SHEET_ORDER = [
-        'Snowboard Pants','Snowboard Jacket','Insulated Snowboard Jacket',
-        'Sweatpants','Sweatshirt, Hooded Sweatshirt','Long-sleeve Tee','T-shirt',
-        'Beanie','Beanie(Angora)','Cap','HOOD WARMER N','BALACLAVA','Snowboard Stomppad'
-    ]
-    MAIN_COLORS = {
-        'Snowboard Pants':'DCE6F1','Snowboard Jacket':'FEF9E7',
-        'Insulated Snowboard Jacket':'EBF5FB','Sweatpants':'F9F2FF',
-        'Sweatshirt, Hooded Sweatshirt':'FEF5E7','Long-sleeve Tee':'E9F7EF',
-        'T-shirt':'FDF2F8','Beanie':'F0FFF4','Beanie(Angora)':'FFFDE7',
-        'Cap':'F3E5F5','HOOD WARMER N':'E8EAF6','BALACLAVA':'FCE4EC',
-        'Snowboard Stomppad':'E8F5E9',
-    }
-    SEC_COLORS = {
-        'Snowboard Pants':'DCE6F1','Snowboard Jacket':'FFF9C4',
-        'Insulated Snowboard Jacket':'BBDEFB','Sweatpants':'E1BEE7',
-        'Sweatshirt, Hooded Sweatshirt':'FFE0B2','Long-sleeve Tee':'C8E6C9',
-        'T-shirt':'F8BBD0','Beanie':'DCEDC8','Beanie(Angora)':'FFF9C4',
-        'Cap':'E1BEE7','HOOD WARMER N':'C5CAE9','BALACLAVA':'FFCDD2',
-        'Snowboard Stomppad':'A5D6A7',
-    }
-
+    # 시트별 CTN 그룹
     sheet_ctns = {sh: [] for sh in SHEET_ORDER}
     for ctn in ctns:
         main = ctn_main[ctn['ctn_no']]
         if main in sheet_ctns: sheet_ctns[main].append(ctn)
 
+    # 우측 데이터: 시트별 → 비주품목 카테고리별 → [ctn_no, style, color, sizes]
+    # sheet_right[sh][sec_desc] = [{ctn_no, style, color, sizes}]
+    sheet_right = {sh: defaultdict(list) for sh in SHEET_ORDER}
+    for sh in SHEET_ORDER:
+        for ctn in sheet_ctns[sh]:
+            for r in ctn['rows']:
+                if r['qty'] == 0 or not r['desc']: continue
+                if r['desc'] == sh: continue  # 주 품목 제외
+                sheet_right[sh][r['desc']].append({
+                    'ctn_no': ctn['ctn_no'],
+                    'style':  r['style'],
+                    'color':  r['color'],
+                    'sizes':  r['row_data'][3:9],
+                })
+
+    # Excel 생성
     wb_cat = Workbook()
     wb_cat.active.title = '_temp'; first_sheet = True
 
@@ -445,73 +447,91 @@ def make_category(pack_bytes, inv_bytes):
 
         main_fill = PatternFill('solid', fgColor=MAIN_COLORS.get(sh,'FFFFFF'))
 
+        # 컬럼 너비
         ws.column_dimensions['A'].width = 9
-        ws.column_dimensions['B'].width = 40
+        ws.column_dimensions['B'].width = 38
         ws.column_dimensions['C'].width = 20
         for c in ['D','E','F','G','H','I']: ws.column_dimensions[c].width = 6
         ws.column_dimensions['J'].width = 8
         ws.column_dimensions['K'].width = 9
-        ws.column_dimensions['L'].width = 2
-        ws.column_dimensions['M'].width = 40
-        ws.column_dimensions['N'].width = 20
-        for c in ['O','P','Q','R','S','T']: ws.column_dimensions[c].width = 6
+        ws.column_dimensions['L'].width = 2  # 구분선
+        ws.column_dimensions['M'].width = 9
+        ws.column_dimensions['N'].width = 38
+        ws.column_dimensions['O'].width = 20
+        for c in ['P','Q','R','S','T','U']: ws.column_dimensions[c].width = 6
 
-        hdrs = ['CTN NO.','STYLE','COLOR','S','M','L','XL','2XL','3XL','TOTAL','G.W(kgs)']
-        for i, h in enumerate(hdrs, 1):
-            c = ws.cell(row=1, column=i, value=h)
-            c.font = Font(name='Arial', bold=True, size=9)
-            c.fill = col_fill; c.alignment = center; c.border = tb()
-        for i, h in enumerate(['STYLE','COLOR','S','M','L','XL','2XL','3XL'], start=13):
+        # 좌측 헤더
+        hdrs_l = ['CTN NO.','STYLE','COLOR','S','M','L','XL','2XL','3XL','TOTAL','G.W(kgs)']
+        for i, h in enumerate(hdrs_l, 1):
             c = ws.cell(row=1, column=i, value=h)
             c.font = Font(name='Arial', bold=True, size=9)
             c.fill = col_fill; c.alignment = center; c.border = tb()
 
+        # 우측 헤더
+        hdrs_r = ['CTN NO.','STYLE','COLOR','S','M','L','XL','2XL','3XL']
+        for i, h in enumerate(hdrs_r, 13):
+            c = ws.cell(row=1, column=i, value=h)
+            c.font = Font(name='Arial', bold=True, size=9)
+            c.fill = col_fill; c.alignment = center; c.border = tb()
+
+        # ── 좌측: 원본 데이터 ──────────────────────────────
         cur_row = 2; total_qty = 0
-
         for ctn in sheet_ctns[sh]:
-            ctn_rows = [(s,c,q,rd) for s,c,q,rd in ctn['rows']
-                if find_info(s, entries) and find_info(s, entries)['desc'] == sh]
-            sec_items = ctn_secondary.get(ctn['ctn_no'],[])
-            if not ctn_rows: continue
-
             first_row = True
-            for style, color, qty, row_data in ctn_rows:
-                for i, val in enumerate(row_data[:11], 1):
+            for r in ctn['rows']:
+                if not r['style']: continue
+                row_fill = main_fill if r['desc'] == sh else PatternFill('solid', fgColor=SEC_COLORS.get(r['desc'],'EEEEEE'))
+                for i, val in enumerate(r['row_data'][:11], 1):
                     display_val = val if (i != 1 or first_row) else None
                     c = ws.cell(row=cur_row, column=i, value=display_val)
                     c.font = Font(name='Arial', size=9, bold=(first_row and i==1))
                     c.alignment = center if i >= 4 else left_a
-                    c.border = tb(); c.fill = main_fill
-                if first_row:
-                    for j, sec in enumerate(sec_items):
-                        r = cur_row + j
-                        sec_fill = PatternFill('solid', fgColor=SEC_COLORS.get(sec['desc'],'EEEEEE'))
-                        ws.cell(row=r, column=13, value=sec['style']).font = Font(name='Arial', size=9)
-                        ws.cell(row=r, column=13).fill = sec_fill
-                        ws.cell(row=r, column=13).alignment = left_a
-                        ws.cell(row=r, column=13).border = tb()
-                        ws.cell(row=r, column=14, value=sec['color']).font = Font(name='Arial', size=9)
-                        ws.cell(row=r, column=14).fill = sec_fill
-                        ws.cell(row=r, column=14).alignment = left_a
-                        ws.cell(row=r, column=14).border = tb()
-                        for k, sz_val in enumerate(sec['sizes']):
-                            cc = ws.cell(row=r, column=15+k, value=sz_val if sz_val else None)
-                            cc.font = Font(name='Arial', size=9)
-                            cc.fill = sec_fill; cc.alignment = center; cc.border = tb()
-                if qty > 0: total_qty += qty
-                first_row = False; cur_row += 1
+                    c.border = tb(); c.fill = row_fill
+                if r['desc'] == sh and r['qty'] > 0:
+                    total_qty += r['qty']
+                first_row = False
+                cur_row += 1
 
-            extra = len(sec_items) - len(ctn_rows) + 1
-            if extra > 0: cur_row += extra - 1
-
+        # TOTAL 행
         cur_row += 1
         ws.merge_cells(f'A{cur_row}:B{cur_row}')
         c = ws.cell(row=cur_row, column=1, value='TOTAL')
         c.font = Font(name='Arial', bold=True, size=9); c.fill = col_fill
         ws.cell(row=cur_row, column=10, value=total_qty).font = Font(name='Arial', bold=True, size=9)
 
+        # ── 우측: 카테고리별 종합 ──────────────────────────
+        right = sheet_right[sh]
+        r_row = 2
+        for sec_desc in SHEET_ORDER:
+            if sec_desc not in right or not right[sec_desc]: continue
+            sec_fill = PatternFill('solid', fgColor=SEC_COLORS.get(sec_desc,'EEEEEE'))
+            sec_hdr_fill = PatternFill('solid', fgColor='595959')
+
+            # 카테고리 헤더
+            ws.merge_cells(f'M{r_row}:U{r_row}')
+            c = ws.cell(row=r_row, column=13, value=sec_desc)
+            c.font = Font(name='Arial', bold=True, size=9, color='FFFFFF')
+            c.fill = sec_hdr_fill; c.alignment = left_a; c.border = tb()
+            r_row += 1
+
+            # 각 행
+            for item in right[sec_desc]:
+                vals = [item['ctn_no'], item['style'], item['color']] + [
+                    (v if v else None) for v in item['sizes']
+                ]
+                for i, val in enumerate(vals, 13):
+                    c = ws.cell(row=r_row, column=i, value=val)
+                    c.font = Font(name='Arial', size=9)
+                    c.fill = sec_fill
+                    c.alignment = center if i >= 16 else left_a
+                    c.border = tb()
+                r_row += 1
+
+            r_row += 1  # 카테고리 사이 빈 행
+
     buf = io.BytesIO(); wb_cat.save(buf); buf.seek(0)
     return buf
+
 
 # ════════════════════════════════════════════════════════
 # UI
