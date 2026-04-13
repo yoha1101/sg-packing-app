@@ -49,8 +49,8 @@ def get_desc_info(hs, fabric):
 
 PRIORITY = [
     'Insulated Snowboard Jacket', 'Snowboard Jacket', 'Snowboard Pants',
-    'Sweatpants', 'Sweatshirt, Hooded Sweatshirt', 'Long-sleeve Tee', 'T-shirt',
-    'Beanie', 'Beanie(Angora)', 'Cap', 'HOOD WARMER N', 'BALACLAVA', 'Snowboard Stomppad'
+    'Long-sleeve Tee', 'Sweatshirt, Hooded Sweatshirt', 'Sweatpants', 'T-shirt',
+    'Cap', 'Beanie', 'Beanie(Angora)', 'HOOD WARMER N', 'BALACLAVA', 'Snowboard Stomppad'
 ]
 def get_prio(d): return PRIORITY.index(d) if d in PRIORITY else 99
 
@@ -59,20 +59,34 @@ SHEET_ORDER = ['Snowboard Pants','Snowboard Jacket','Insulated Snowboard Jacket'
     'Beanie','Beanie(Angora)','Cap','HOOD WARMER N','BALACLAVA','Snowboard Stomppad']
 
 MAIN_COLORS = {
-    'Snowboard Pants':'DCE6F1','Snowboard Jacket':'FEF9E7',
-    'Insulated Snowboard Jacket':'EBF5FB','Sweatpants':'F9F2FF',
-    'Sweatshirt, Hooded Sweatshirt':'FEF5E7','Long-sleeve Tee':'E9F7EF',
-    'T-shirt':'FDF2F8','Beanie':'F0FFF4','Beanie(Angora)':'FFFDE7',
-    'Cap':'F3E5F5','HOOD WARMER N':'E8EAF6','BALACLAVA':'FCE4EC',
-    'Snowboard Stomppad':'E8F5E9',
+    'Snowboard Pants':            'C6EFCE',  # 연두
+    'Snowboard Jacket':           'FFEB9C',  # 노랑
+    'Insulated Snowboard Jacket': 'FFC7CE',  # 연빨강
+    'Sweatpants':                 'D9D2E9',  # 연보라
+    'Sweatshirt, Hooded Sweatshirt': 'FCE4D6', # 연주황
+    'Long-sleeve Tee':            '00B0F0',  # 파랑 (진하게)
+    'T-shirt':                    'FF66CC',  # 핑크 (진하게)
+    'Beanie':                     'E2EFDA',  # 연한 민트
+    'Beanie(Angora)':             'FFF2CC',  # 크림
+    'Cap':                        'DDEBF7',  # 하늘
+    'HOOD WARMER N':              'F4CCCC',  # 연분홍
+    'BALACLAVA':                  'D9EAD3',  # 연초록
+    'Snowboard Stomppad':         'CFE2F3',  # 연파랑
 }
 SEC_COLORS = {
-    'Snowboard Pants':'BDD7EE','Snowboard Jacket':'FFEB9C',
-    'Insulated Snowboard Jacket':'9DC3E6','Sweatpants':'D5A6BD',
-    'Sweatshirt, Hooded Sweatshirt':'F4B942','Long-sleeve Tee':'A9D18E',
-    'T-shirt':'F4CCCC','Beanie':'B6D7A8','Beanie(Angora)':'FFE599',
-    'Cap':'C9B1D9','HOOD WARMER N':'9FC5E8','BALACLAVA':'EA9999',
-    'Snowboard Stomppad':'93C47D',
+    'Snowboard Pants':            '00B050',  # 진녹
+    'Snowboard Jacket':           'FFD700',  # 진노랑
+    'Insulated Snowboard Jacket': 'FF0000',  # 진빨강
+    'Sweatpants':                 '7030A0',  # 진보라
+    'Sweatshirt, Hooded Sweatshirt': 'F4773B', # 진주황
+    'Long-sleeve Tee':            '0070C0',  # 진파랑
+    'T-shirt':                    'FF00FF',  # 마젠타
+    'Beanie':                     '70AD47',  # 진녹2
+    'Beanie(Angora)':             'FFD966',  # 진크림
+    'Cap':                        '2E75B6',  # 진하늘
+    'HOOD WARMER N':              'EA9999',  # 진분홍
+    'BALACLAVA':                  '93C47D',  # 진초록
+    'Snowboard Stomppad':         '9FC5E8',  # 진연파랑
 }
 
 
@@ -218,6 +232,8 @@ def build_groups(ctns):
                 if sd not in g['sec_map']: g['sec_map'][sd] = {'qty': 0, 'ctns': []}
                 g['sec_map'][sd]['qty'] += it['qty']
                 g['sec_map'][sd]['ctns'].append(ctn['ctn_no'])
+    # PRIORITY 순서로 정렬
+    desc_order.sort(key=get_prio)
     return desc_order, desc_groups
 
 # ── Excel 공통 스타일 ─────────────────────────────────────
@@ -330,17 +346,21 @@ def make_actual(desc_order, desc_groups, messrs, destination, date_str):
 
     # Sheet1 (액세서리 매핑 테이블 — 실제 양식 그대로)
     ws2 = wb.create_sheet('Sheet1')
+    # 있는 desc 목록
+    existing_descs = set(desc_order)
     acc_data = [
-        ('6505.00-0000', 'BEANIE',        'Acryl 100'),
-        ('6505.00-0000', 'CAP',           'Shell C100 / Lining P100 / '),
-        ('',             'BEANIE(Angora)','Shell A 70 + Angora 30'),
-        ('6505.00-0000', 'BALACLAVA',     'Shell C 88 / S 12'),
-        ('6505.00-0000', 'HOOD WARMER N', 'P100'),
+        ('6505.00-0000', 'CAP',           'Shell C100 / Lining P100 / ', 'Cap'),
+        ('',             'BEANIE(Angora)','Shell A 70 + Angora 30',       'Beanie(Angora)'),
+        ('6505.00-0000', 'BEANIE',        'Acryl 100',                    'Beanie'),
+        ('6505.00-0000', 'BALACLAVA',     'Shell C 88 / S 12',            'BALACLAVA'),
+        ('6505.00-0000', 'HOOD WARMER N', 'P100',                         'HOOD WARMER N'),
     ]
-    for r_idx, (hs, name, fab) in enumerate(acc_data, 1):
-        ws2.cell(row=r_idx, column=1, value=hs)
-        ws2.cell(row=r_idx, column=2, value=name)
-        ws2.cell(row=r_idx, column=3, value=fab)
+    for r_idx, (hs, name, fab, desc_key) in enumerate(acc_data, 1):
+        has_item = desc_key in existing_descs
+        font_color = '000000' if has_item else 'AAAAAA'
+        for col, val in enumerate([hs, name, fab], 1):
+            c = ws2.cell(row=r_idx, column=col, value=val)
+            c.font = Font(name='Arial', size=9, color=font_color)
 
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return buf
