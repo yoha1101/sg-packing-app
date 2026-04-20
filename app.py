@@ -259,18 +259,19 @@ def make_invoice(df, messrs, destination, date_str):
     total_qty = 0
     total_amount = 0
     
-    for idx, row in enumerate(grouped.itertuples(), 1):
+    # iterrows() 사용으로 변경
+    for idx, (_, row) in enumerate(grouped.iterrows(), 1):
         sc(ws, cur_row, 1, idx, align=center, border=tb())
-        sc(ws, cur_row, 2, row._2, align=center, border=tb())  # HS Code
-        sc(ws, cur_row, 3, row._1, align=left_a, border=tb())   # 품목명
-        sc(ws, cur_row, 4, row._5, align=center, border=tb())   # 수량
-        sc(ws, cur_row, 5, row._3, align=left_a, border=tb())   # Material
-        sc(ws, cur_row, 6, row._4, align=center, border=tb())   # 단가
-        amount = row._5 * row._4
+        sc(ws, cur_row, 2, row['HS Code'], align=center, border=tb())
+        sc(ws, cur_row, 3, row['품목명'], align=left_a, border=tb())
+        sc(ws, cur_row, 4, row['수량'], align=center, border=tb())
+        sc(ws, cur_row, 5, row['Material'], align=left_a, border=tb())
+        sc(ws, cur_row, 6, row['단가(KRW)'], align=center, border=tb())
+        amount = row['수량'] * row['단가(KRW)']
         sc(ws, cur_row, 7, amount, align=center, border=tb())
         sc(ws, cur_row, 8, '', border=tb())
         
-        total_qty += row._5
+        total_qty += row['수량']
         total_amount += amount
         cur_row += 1
     
