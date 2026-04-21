@@ -115,9 +115,9 @@ def parse_export_csv(csv_file):
     """해외 출고리스트 CSV 파싱"""
     df = pd.read_csv(csv_file)
     
-    # 박스번호 forward fill (수정됨)
-    df['박스번호'] = df['박스번호'].ffill()
-    df['무게(kg)'] = df['무게(kg)'].ffill()
+    # 박스번호 forward fill
+    df['박스번호'] = df['박스번호'].fillna(method='ffill')
+    df['무게(kg)'] = df['무게(kg)'].fillna(method='ffill')
     
     # 카테고리 표준화
     df['Category'] = df['Style'].apply(standardize_category)
@@ -187,6 +187,8 @@ def make_packing_list(boxes, destination):
         
         # 박스번호는 첫 행에만
         first_in_box = True
+        box_first_row = cur_row  # 박스의 첫 행 위치 저장
+        
         for style, data in style_data.items():
             if first_in_box:
                 sc(ws, cur_row, 1, box_no, bold=True, align=center, border=tb())
@@ -204,8 +206,13 @@ def make_packing_list(boxes, destination):
                 total += qty
             
             sc(ws, cur_row, 10, total, align=center, border=tb())
-            sc(ws, cur_row, 11, box['weight'] if cur_row == (cur_row - (cur_row - cur_row)) + 2 else '', 
-               align=center, border=tb())
+            
+            # G.W는 박스의 첫 행에만 표시
+            if cur_row == box_first_row:
+                sc(ws, cur_row, 11, box['weight'], align=center, border=tb())
+            else:
+                sc(ws, cur_row, 11, '', border=tb())
+            
             cur_row += 1
     
     buf = io.BytesIO()
@@ -221,11 +228,11 @@ def make_invoice(df, messrs, destination, date_str):
     ws.title = 'Invoice'
     
     # 컬럼 너비
-    for col, width in [('A',5),('B',10),('C',45),('D',12),('E',50),('F',12),('G',10),('H',10)]:
+    for col, width in [('A',5),('B',10),('C',45),('D',12),('E',50),('F',12),('G',12)]:
         ws.column_dimensions[col].width = width
     
     # 헤더 섹션
-    ws.merge_cells('A1:H1')
+    ws.merge_cells('A1:G1')
     sc(ws, 1, 1, 'COMMERCIAL INVOICE', bold=True, size=14, align=center, fill=hdr_fill, 
        color='FFFFFF')
     ws.row_dimensions[1].height = 25
@@ -248,7 +255,7 @@ def make_invoice(df, messrs, destination, date_str):
     sc(ws, 12, 2, destination)
     
     # 테이블 헤더 (27행부터)
-    headers = ['NO.','HS CODE','Description of goods','QTY','Fabric ratio','Unit Price(KRW)','Amount(KRW)','Remark']
+    headers = ['NO.','HS CODE','Description of goods','QTY','Fabric ratio','Unit Price(KRW)','Amount(KRW)']
     for i, h in enumerate(headers, 1):
         sc(ws, 27, i, h, bold=True, fill=col_fill, align=center, border=tb())
     
@@ -259,19 +266,17 @@ def make_invoice(df, messrs, destination, date_str):
     total_qty = 0
     total_amount = 0
     
-    # iterrows() 사용으로 변경
-    for idx, (_, row) in enumerate(grouped.iterrows(), 1):
+    for idx, row in enumerate(grouped.itertuples(), 1):
         sc(ws, cur_row, 1, idx, align=center, border=tb())
-        sc(ws, cur_row, 2, row['HS Code'], align=center, border=tb())
-        sc(ws, cur_row, 3, row['품목명'], align=left_a, border=tb())
-        sc(ws, cur_row, 4, row['수량'], align=center, border=tb())
-        sc(ws, cur_row, 5, row['Material'], align=left_a, border=tb())
-        sc(ws, cur_row, 6, row['단가(KRW)'], align=center, border=tb())
-        amount = row['수량'] * row['단가(KRW)']
+        sc(ws, cur_row, 2, row._2, align=center, border=tb())  # HS Code
+        sc(ws, cur_row, 3, row._1, align=left_a, border=tb())   # 품목명
+        sc(ws, cur_row, 4, row._5, align=center, border=tb())   # 수량
+        sc(ws, cur_row, 5, row._3, align=left_a, border=tb())   # Material
+        sc(ws, cur_row, 6, row._4, align=center, border=tb())   # 단가
+        amount = row._5 * row._4
         sc(ws, cur_row, 7, amount, align=center, border=tb())
-        sc(ws, cur_row, 8, '', border=tb())
         
-        total_qty += row['수량']
+        total_qty += row._5
         total_amount += amount
         cur_row += 1
     
