@@ -116,8 +116,8 @@ def parse_export_csv(csv_file):
     df = pd.read_csv(csv_file)
     
     # 박스번호 forward fill
-    df['박스번호'] = df['박스번호'].fillna(method='ffill')
-    df['무게(kg)'] = df['무게(kg)'].fillna(method='ffill')
+    df['박스번호'] = df['박스번호'].ffill()
+    df['무게(kg)'] = df['무게(kg)'].ffill()
     
     # 카테고리 표준화
     df['Category'] = df['Style'].apply(standardize_category)
