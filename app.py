@@ -526,6 +526,11 @@ def list_to_sheet(df_raw: pd.DataFrame) -> io.BytesIO:
             style_total = 0
             row_fill = PatternFill('solid', fgColor='EEF4FB') if si % 2 == 0 else PatternFill('solid', fgColor='FFFFFF')
 
+            # 이 품목이 FREE 전용인지 확인 (모든 사이즈가 FREE)
+            is_free = set(sdf['사이즈'].unique()) <= {'FREE'}
+            size_start_col = 3
+            size_end_col   = 2 + len(sizes)  # inclusive
+
             for ci, color in enumerate(color_order):
                 cdf = sdf[sdf['Color'] == color]
                 pivot = cdf.groupby('사이즈')['현재고'].sum()
@@ -538,10 +543,26 @@ def list_to_sheet(df_raw: pd.DataFrame) -> io.BytesIO:
                 sc(ws, cur_row, 1, name_val, fill=row_fill, align=left_a, border=tb())
                 sc(ws, cur_row, 2, color,    fill=row_fill, align=left_a, border=tb())
 
-                for j, sz in enumerate(sizes, 3):
-                    raw = pivot.get(sz, None)
-                    val = int(raw) if has_qty and pd.notna(raw) and raw > 0 else ''
-                    sc(ws, cur_row, j, val, fill=row_fill, align=center, border=tb())
+                if is_free:
+                    # 사이즈 열 전체 병합 후 수량 가운데 표시
+                    free_raw = pivot.get('FREE', None)
+                    free_val = int(free_raw) if has_qty and pd.notna(free_raw) and free_raw > 0 else ''
+                    for j in range(size_start_col, size_end_col + 1):
+                        sc(ws, cur_row, j, '', fill=row_fill, border=tb())
+                    ws.merge_cells(
+                        start_row=cur_row, start_column=size_start_col,
+                        end_row=cur_row,   end_column=size_end_col
+                    )
+                    merged_cell = ws.cell(row=cur_row, column=size_start_col, value=free_val)
+                    merged_cell.font      = Font(name='Arial', bold=True, size=9)
+                    merged_cell.fill      = row_fill
+                    merged_cell.alignment = Alignment(horizontal='center', vertical='center')
+                    merged_cell.border    = Border(left=thin, right=thin, top=thin, bottom=thin)
+                else:
+                    for j, sz in enumerate(sizes, 3):
+                        raw = pivot.get(sz, None)
+                        val = int(raw) if has_qty and pd.notna(raw) and raw > 0 else ''
+                        sc(ws, cur_row, j, val, fill=row_fill, align=center, border=tb())
 
                 total_val = row_total if has_qty else ''
                 sc(ws, cur_row, 3 + len(sizes), total_val, bold=True, fill=row_fill, align=center, border=tb())
