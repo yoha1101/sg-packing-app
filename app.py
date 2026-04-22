@@ -492,10 +492,19 @@ def list_to_sheet(df_raw: pd.DataFrame) -> io.BytesIO:
         if df_s.empty:
             continue
 
-        # 이 시즌에 있는 사이즈만 (SIZE_COLS_SHEET 순서 우선)
+        # 이 시즌에 있는 사이즈 — FREE는 헤더에서 제외 (병합 표시)
         all_sizes_in_season = df_s['사이즈'].unique().tolist()
         sizes = [s for s in SIZE_COLS_SHEET if s in all_sizes_in_season] + \
-                [s for s in all_sizes_in_season if s not in SIZE_COLS_SHEET]
+                [s for s in all_sizes_in_season if s not in SIZE_COLS_SHEET and s != 'FREE']
+        # sizes = 헤더에 실제로 들어갈 사이즈 목록 (FREE 제외)
+
+        # 컬럼 인덱스 정의
+        # A=1(품목명) B=2(Color) C~(sizes) TOTAL S-TOT
+        total_col = 3 + len(sizes)       # TOTAL 열
+        stot_col  = 3 + len(sizes) + 1   # S-TOT 열
+
+        size_start_col = 3
+        size_end_col   = 2 + len(sizes)  # 마지막 사이즈 열 (inclusive)
 
         # 품목명 순서 보존
         style_order = list(dict.fromkeys(df_s['품목명'].tolist()))
@@ -507,29 +516,101 @@ def list_to_sheet(df_raw: pd.DataFrame) -> io.BytesIO:
         ws.column_dimensions['B'].width = 24
         for i in range(len(sizes)):
             ws.column_dimensions[get_column_letter(3 + i)].width = 7
-        ws.column_dimensions[get_column_letter(3 + len(sizes))].width = 9
+        ws.column_dimensions[get_column_letter(total_col)].width = 9   # TOTAL
+        ws.column_dimensions[get_column_letter(stot_col)].width  = 9   # S-TOT
 
         # ── 헤더
         sc(ws, 1, 1, '품목명', bold=True, fill=col_fill, align=center, border=tb())
         sc(ws, 1, 2, 'Color',  bold=True, fill=col_fill, align=center, border=tb())
         for j, sz in enumerate(sizes, 3):
             sc(ws, 1, j, sz, bold=True, fill=col_fill, align=center, border=tb())
-        sc(ws, 1, 3 + len(sizes), 'TOTAL', bold=True, fill=col_fill, align=center, border=tb())
+        sc(ws, 1, total_col, 'TOTAL', bold=True, fill=col_fill, align=center, border=tb())
+        sc(ws, 1, stot_col,  'S-TOT', bold=True, fill=PatternFill('solid', fgColor='BDD7EE'),
+           align=center, border=tb())
 
         cur_row = 2
         grand_total = 0
 
+        # ── 그룹 키워드 → 색상 & 구분선 규칙 ──────────────────
+        import re as _re
+        GROUP_FILL = {
+            'V2':    ('E2EFDA', 'C6E0B4'),   # 파스텔 초록 (메인, S-TOT)
+            'EASY':  ('DDEBF7', 'BDD7EE'),   # 파스텔 파랑
+            'ORBAN': ('FFEB9C', 'FFD966'),   # 파스텔 노랑
+            'COLLAB':('FCE4D6', 'F4B183'),   # 파스텔 핑크 (콜라보)
+            'OTHER': ('F2F2F2', 'D9D9D9'),   # 회색
+        }
+
+        def get_group(name: str) -> str:
+            n = _re.sub(r'^\d+\.\s*', '', str(name)).strip()
+            tok = n.split()[0] if n.split() else ''
+            if tok == 'V2':     return 'V2'
+            if tok == 'EASY':   return 'EASY'
+            if tok == 'ORBAN':  return 'ORBAN'
+            if tok.startswith('SG') and 'x' in tok.lower(): return 'COLLAB'
+            if 'SPECIALGUEST' in n.upper() and 'X' in n.upper(): return 'COLLAB'
+            return 'OTHER'
+
+        prev_group    = None
+        prev_subgroup = None
+
+        def get_subgroup(name: str) -> str:
+            n = _re.sub(r'^\d+\.\s*', '', str(name)).strip()
+            tok = n.split()[0] if n.split() else ''
+            return tok.upper() if tok.upper().startswith('SG') else ''
+
         for si, style in enumerate(style_order):
+            cur_group    = get_group(style)
+            cur_subgroup = get_subgroup(style) if cur_group == 'COLLAB' else ''
+
+            # ── 빈 행 삽입
+            need_gap = 0
+            if prev_group is not None:
+                if cur_group != prev_group:
+                    need_gap = 2 if (cur_group in ('V2','EASY','ORBAN') or
+                                     prev_group in ('V2','EASY','ORBAN')) else 1
+                elif cur_group == 'COLLAB' and cur_subgroup != prev_subgroup:
+                    need_gap = 1
+            for _ in range(need_gap):
+                for col in range(1, stot_col + 1):
+                    ws.cell(row=cur_row, column=col).value = None
+                cur_row += 1
+            prev_group    = cur_group
+            prev_subgroup = cur_subgroup
+
             sdf = df_s[df_s['품목명'] == style]
             color_order = list(dict.fromkeys(sdf['Color'].tolist()))
             style_first_row = cur_row
             style_total = 0
-            row_fill = PatternFill('solid', fgColor='EEF4FB') if si % 2 == 0 else PatternFill('solid', fgColor='FFFFFF')
 
-            # 이 품목이 FREE 전용인지 확인 (모든 사이즈가 FREE)
-            is_free = set(sdf['사이즈'].unique()) <= {'FREE'}
-            size_start_col = 3
-            size_end_col   = 2 + len(sizes)  # inclusive
+            # ── 행 배경색: 그룹색 기반 교대
+            main_hex, stot_hex = GROUP_FILL[cur_group]
+            # 같은 그룹 내 품목 인덱스로 교대
+            grp_styles = [s for s in style_order if get_group(s) == cur_group]
+            grp_idx = grp_styles.index(style)
+            if grp_idx % 2 == 0:
+                row_fill  = PatternFill('solid', fgColor=main_hex)
+                stot_fill = PatternFill('solid', fgColor=stot_hex)
+            else:
+                # 교대: 살짝 밝게
+                lighter = 'F7FCF5' if cur_group=='V2' else ('EEF5FB' if cur_group=='EASY' else ('FFFDE7' if cur_group=='ORBAN' else ('FDF2EC' if cur_group=='COLLAB' else 'FAFAFA')))
+                row_fill  = PatternFill('solid', fgColor=lighter)
+                stot_fill = PatternFill('solid', fgColor=main_hex)
+
+            # 품목 유형 판별
+            item_sizes = set(sdf['사이즈'].unique())
+            is_free    = item_sizes <= {'FREE'}
+            is_mittens = bool(item_sizes & {'SM', 'LXL'})  # SM/LXL 장갑류
+
+            # 장갑 병합 범위 계산 (시즌에 S가 있으면 S+M+L / 없으면 M+L)
+            has_s_in_season = 'S' in sizes
+            if is_mittens:
+                # SM 그룹: S있으면 S~L(3칸), 없으면 M~L(2칸)
+                sm_start = sizes.index('S') + 3 if has_s_in_season else sizes.index('M') + 3
+                sm_end   = sizes.index('L') + 3
+                # LXL 그룹: XL~3XL (있는 것까지)
+                lxl_start = sizes.index('XL') + 3
+                lxl_end   = sizes.index('3XL') + 3 if '3XL' in sizes else (sizes.index('2XL') + 3 if '2XL' in sizes else lxl_start)
 
             for ci, color in enumerate(color_order):
                 cdf = sdf[sdf['Color'] == color]
@@ -544,7 +625,7 @@ def list_to_sheet(df_raw: pd.DataFrame) -> io.BytesIO:
                 sc(ws, cur_row, 2, color,    fill=row_fill, align=left_a, border=tb())
 
                 if is_free:
-                    # 사이즈 열 전체 병합 후 수량 가운데 표시
+                    # 사이즈 열 전체 병합 → FREE 수량 표시
                     free_raw = pivot.get('FREE', None)
                     free_val = int(free_raw) if has_qty and pd.notna(free_raw) and free_raw > 0 else ''
                     for j in range(size_start_col, size_end_col + 1):
@@ -553,29 +634,70 @@ def list_to_sheet(df_raw: pd.DataFrame) -> io.BytesIO:
                         start_row=cur_row, start_column=size_start_col,
                         end_row=cur_row,   end_column=size_end_col
                     )
-                    merged_cell = ws.cell(row=cur_row, column=size_start_col, value=free_val)
-                    merged_cell.font      = Font(name='Arial', bold=True, size=9)
-                    merged_cell.fill      = row_fill
-                    merged_cell.alignment = Alignment(horizontal='center', vertical='center')
-                    merged_cell.border    = Border(left=thin, right=thin, top=thin, bottom=thin)
+                    mc = ws.cell(row=cur_row, column=size_start_col, value=free_val)
+                    mc.font      = Font(name='Arial', bold=True, size=9)
+                    mc.fill      = row_fill
+                    mc.alignment = Alignment(horizontal='center', vertical='center')
+                    mc.border    = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+                elif is_mittens:
+                    # SM 그룹 병합
+                    sm_raw = pivot.get('SM', None)
+                    sm_val = int(sm_raw) if has_qty and pd.notna(sm_raw) and sm_raw > 0 else ''
+                    for j in range(size_start_col, size_end_col + 1):
+                        sc(ws, cur_row, j, '', fill=row_fill, border=tb())
+                    ws.merge_cells(start_row=cur_row, start_column=sm_start,
+                                   end_row=cur_row,   end_column=sm_end)
+                    mc = ws.cell(row=cur_row, column=sm_start, value=sm_val)
+                    mc.font = Font(name='Arial', bold=True, size=9)
+                    mc.fill = row_fill
+                    mc.alignment = Alignment(horizontal='center', vertical='center')
+                    mc.border = Border(left=thin, right=thin, top=thin, bottom=thin)
+                    # LXL 그룹 병합
+                    lxl_raw = pivot.get('LXL', None)
+                    lxl_val = int(lxl_raw) if has_qty and pd.notna(lxl_raw) and lxl_raw > 0 else ''
+                    ws.merge_cells(start_row=cur_row, start_column=lxl_start,
+                                   end_row=cur_row,   end_column=lxl_end)
+                    mc2 = ws.cell(row=cur_row, column=lxl_start, value=lxl_val)
+                    mc2.font = Font(name='Arial', bold=True, size=9)
+                    mc2.fill = row_fill
+                    mc2.alignment = Alignment(horizontal='center', vertical='center')
+                    mc2.border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
                 else:
                     for j, sz in enumerate(sizes, 3):
                         raw = pivot.get(sz, None)
                         val = int(raw) if has_qty and pd.notna(raw) and raw > 0 else ''
                         sc(ws, cur_row, j, val, fill=row_fill, align=center, border=tb())
 
-                total_val = row_total if has_qty else ''
-                sc(ws, cur_row, 3 + len(sizes), total_val, bold=True, fill=row_fill, align=center, border=tb())
+                # TOTAL 열
+                sc(ws, cur_row, total_col, row_total if has_qty else '',
+                   bold=True, fill=row_fill, align=center, border=tb())
+                # S-TOT 열: 빈 칸으로 채워두고 나중에 병합
+                sc(ws, cur_row, stot_col, '', fill=stot_fill, border=tb())
                 cur_row += 1
 
             grand_total += style_total
 
-            # 품목명 병합 (여러 컬러)
+            # 품목명 A열 병합 (여러 컬러)
             if len(color_order) > 1:
                 ws.merge_cells(f'A{style_first_row}:A{cur_row - 1}')
                 ws.cell(row=style_first_row, column=1).alignment = Alignment(
                     horizontal='left', vertical='center', wrap_text=True
                 )
+
+            # S-TOT 열 병합 + 품목 합계 표시
+            stot_val = style_total if has_qty else ''
+            if len(color_order) > 1:
+                ws.merge_cells(
+                    start_row=style_first_row, start_column=stot_col,
+                    end_row=cur_row - 1,       end_column=stot_col
+                )
+            mc = ws.cell(row=style_first_row, column=stot_col, value=stot_val)
+            mc.font      = Font(name='Arial', bold=True, size=9)
+            mc.fill      = stot_fill
+            mc.alignment = Alignment(horizontal='center', vertical='center')
+            mc.border    = Border(left=thin, right=thin, top=thin, bottom=thin)
 
         # ── GRAND TOTAL 행
         cur_row += 1
@@ -583,12 +705,13 @@ def list_to_sheet(df_raw: pd.DataFrame) -> io.BytesIO:
         sc(ws, cur_row, 1, 'GRAND TOTAL', bold=True, fill=col_fill, align=center)
         for j, sz in enumerate(sizes, 3):
             if has_qty:
-                sz_total = int(df_s.groupby('사이즈')['현재고'].sum().get(sz, 0))
+                sz_total = int(df_s[df_s['사이즈'] != 'FREE'].groupby('사이즈')['현재고'].sum().get(sz, 0))
                 sc(ws, cur_row, j, sz_total if sz_total > 0 else '', bold=True, fill=col_fill, align=center)
             else:
                 sc(ws, cur_row, j, '', bold=True, fill=col_fill, align=center)
         total_val = grand_total if has_qty else ''
-        sc(ws, cur_row, 3 + len(sizes), total_val, bold=True, fill=col_fill, align=center)
+        sc(ws, cur_row, total_col, total_val, bold=True, fill=col_fill, align=center)
+        sc(ws, cur_row, stot_col,  total_val, bold=True, fill=PatternFill('solid', fgColor='BDD7EE'), align=center)
 
     buf = io.BytesIO()
     wb.save(buf)
