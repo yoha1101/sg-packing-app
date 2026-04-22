@@ -419,13 +419,24 @@ def parse_sku(sku: str):
     return str(sku), ''
 
 
-# ── 5. 리스트 → 시트 ─────────────────────────────────────
+# ── SKU에서 시즌 추출 ────────────────────────────────────
+def get_season_from_sku(sku: str) -> str:
+    import re
+    m = re.search(r'\d{3}[WwSs](\d{2})', str(sku))
+    if m:
+        y = int(m.group(1))
+        return f'{y-1}{y}'
+    return '기타'
+
+
+# ── 5. 리스트 → 시트 (시즌별 시트 분리) ───────────────────
 def list_to_sheet(df_raw: pd.DataFrame) -> io.BytesIO:
     """
     제품리스트 CSV (SKU / 품목명 / Color / 사이즈 / 현재고)
-    → 제품시트 Excel (품목명×Color 행, S~3XL 열 피벗)
-    현재고가 모두 NaN이면 빈 칸으로 표시 (주문서 양식용)
+    → 제품시트 Excel — 시즌별 시트로 분리 (2526, 2425, 2324 ...)
+    현재고가 모두 NaN이면 빈 칸 시트(주문서용)로 생성
     """
+    from openpyxl.utils import get_column_letter
     df = df_raw.copy()
 
     # ── 컬럼 정규화
@@ -449,7 +460,6 @@ def list_to_sheet(df_raw: pd.DataFrame) -> io.BytesIO:
     if missing:
         raise ValueError(f"필수 컬럼 없음: {missing}\n현재 컬럼: {list(df.columns)}")
 
-    # 현재고 없으면 빈칸 처리
     if '현재고' not in df.columns:
         df['현재고'] = None
 
@@ -458,93 +468,106 @@ def list_to_sheet(df_raw: pd.DataFrame) -> io.BytesIO:
     df['Color']  = df['Color'].astype(str).str.strip()
     df['사이즈'] = df['사이즈'].astype(str).str.strip()
 
-    # 실제 파일에 있는 사이즈만 (SIZE_COLS_SHEET 순서 우선, 없는 사이즈는 뒤에)
-    all_sizes_in_data = df['사이즈'].unique().tolist()
-    sizes = [s for s in SIZE_COLS_SHEET if s in all_sizes_in_data] + \
-            [s for s in all_sizes_in_data if s not in SIZE_COLS_SHEET]
+    # ── 시즌 컬럼: SKU 있으면 SKU에서 추출, 없으면 전체 하나의 시트
+    if 'SKU' in df.columns:
+        df['_시즌'] = df['SKU'].apply(get_season_from_sku)
+    else:
+        df['_시즌'] = '전체'
 
-    # 품목명 순서 보존 (파일 순서 그대로)
-    style_order = list(dict.fromkeys(df['품목명'].tolist()))
+    # 시즌 순서: 최신 → 오래된 순, 기타는 맨 뒤
+    season_order = sorted(
+        [s for s in df['_시즌'].unique() if s != '기타'],
+        reverse=True
+    )
+    if '기타' in df['_시즌'].unique():
+        season_order.append('기타')
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = 'Product Sheet'
-
-    # 컬럼 너비
-    ws.column_dimensions['A'].width = 40  # 품목명
-    ws.column_dimensions['B'].width = 24  # Color
-    for i in range(len(sizes)):
-        from openpyxl.utils import get_column_letter
-        ws.column_dimensions[get_column_letter(3 + i)].width = 7
-    from openpyxl.utils import get_column_letter
-    ws.column_dimensions[get_column_letter(3 + len(sizes))].width = 9  # TOTAL
-
-    # ── 헤더 행
-    sc(ws, 1, 1, '품목명',  bold=True, fill=col_fill, align=center, border=tb())
-    sc(ws, 1, 2, 'Color',   bold=True, fill=col_fill, align=center, border=tb())
-    for j, sz in enumerate(sizes, 3):
-        sc(ws, 1, j, sz, bold=True, fill=col_fill, align=center, border=tb())
-    sc(ws, 1, 3 + len(sizes), 'TOTAL', bold=True, fill=col_fill, align=center, border=tb())
-
-    cur_row = 2
-    grand_total = 0
     has_qty = df['현재고'].notna().any()
 
-    for style in style_order:
-        sdf = df[df['품목명'] == style]
-        color_order = list(dict.fromkeys(sdf['Color'].tolist()))
-        style_total = 0
-        style_first_row = cur_row
+    wb = Workbook()
+    wb.remove(wb.active)  # 기본 시트 제거
 
-        # 스타일 내 행 배경색 (품목명 기준 교대)
-        row_fill = PatternFill('solid', fgColor='EEF4FB') if (style_order.index(style) % 2 == 0) else PatternFill('solid', fgColor='FFFFFF')
+    for season in season_order:
+        df_s = df[df['_시즌'] == season].copy()
+        if df_s.empty:
+            continue
 
-        for ci, color in enumerate(color_order):
-            cdf = sdf[sdf['Color'] == color]
-            pivot = cdf.groupby('사이즈')['현재고'].sum()
+        # 이 시즌에 있는 사이즈만 (SIZE_COLS_SHEET 순서 우선)
+        all_sizes_in_season = df_s['사이즈'].unique().tolist()
+        sizes = [s for s in SIZE_COLS_SHEET if s in all_sizes_in_season] + \
+                [s for s in all_sizes_in_season if s not in SIZE_COLS_SHEET]
 
-            row_total_raw = pivot.sum()
-            row_total = int(row_total_raw) if pd.notna(row_total_raw) and row_total_raw > 0 else 0
-            style_total += row_total
+        # 품목명 순서 보존
+        style_order = list(dict.fromkeys(df_s['품목명'].tolist()))
 
-            # 품목명: 첫 컬러 행에만 표시
-            name_val = style if ci == 0 else ''
-            sc(ws, cur_row, 1, name_val, fill=row_fill, align=left_a, border=tb())
-            sc(ws, cur_row, 2, color,    fill=row_fill, align=left_a, border=tb())
+        ws = wb.create_sheet(title=str(season)[:31])
 
-            for j, sz in enumerate(sizes, 3):
-                raw = pivot.get(sz, None)
-                if has_qty:
-                    val = int(raw) if pd.notna(raw) and raw > 0 else ''
-                else:
-                    val = ''
-                sc(ws, cur_row, j, val, fill=row_fill, align=center, border=tb())
+        # 컬럼 너비
+        ws.column_dimensions['A'].width = 40
+        ws.column_dimensions['B'].width = 24
+        for i in range(len(sizes)):
+            ws.column_dimensions[get_column_letter(3 + i)].width = 7
+        ws.column_dimensions[get_column_letter(3 + len(sizes))].width = 9
 
-            total_val = row_total if has_qty else ''
-            sc(ws, cur_row, 3 + len(sizes), total_val, bold=True, fill=row_fill, align=center, border=tb())
-            cur_row += 1
+        # ── 헤더
+        sc(ws, 1, 1, '품목명', bold=True, fill=col_fill, align=center, border=tb())
+        sc(ws, 1, 2, 'Color',  bold=True, fill=col_fill, align=center, border=tb())
+        for j, sz in enumerate(sizes, 3):
+            sc(ws, 1, j, sz, bold=True, fill=col_fill, align=center, border=tb())
+        sc(ws, 1, 3 + len(sizes), 'TOTAL', bold=True, fill=col_fill, align=center, border=tb())
 
-        grand_total += style_total
+        cur_row = 2
+        grand_total = 0
 
-        # 품목명 병합 (여러 컬러가 있을 때)
-        if len(color_order) > 1:
-            ws.merge_cells(f'A{style_first_row}:A{cur_row - 1}')
-            ws.cell(row=style_first_row, column=1).alignment = Alignment(
-                horizontal='left', vertical='center', wrap_text=True
-            )
+        for si, style in enumerate(style_order):
+            sdf = df_s[df_s['품목명'] == style]
+            color_order = list(dict.fromkeys(sdf['Color'].tolist()))
+            style_first_row = cur_row
+            style_total = 0
+            row_fill = PatternFill('solid', fgColor='EEF4FB') if si % 2 == 0 else PatternFill('solid', fgColor='FFFFFF')
 
-    # ── GRAND TOTAL 행
-    cur_row += 1
-    ws.merge_cells(f'A{cur_row}:B{cur_row}')
-    sc(ws, cur_row, 1, 'GRAND TOTAL', bold=True, fill=col_fill, align=center)
-    for j, sz in enumerate(sizes, 3):
-        if has_qty:
-            sz_total = int(df.groupby('사이즈')['현재고'].sum().get(sz, 0))
-            sc(ws, cur_row, j, sz_total if sz_total > 0 else '', bold=True, fill=col_fill, align=center)
-        else:
-            sc(ws, cur_row, j, '', bold=True, fill=col_fill, align=center)
-    total_val = grand_total if has_qty else ''
-    sc(ws, cur_row, 3 + len(sizes), total_val, bold=True, fill=col_fill, align=center)
+            for ci, color in enumerate(color_order):
+                cdf = sdf[sdf['Color'] == color]
+                pivot = cdf.groupby('사이즈')['현재고'].sum()
+
+                row_total_raw = pivot.sum()
+                row_total = int(row_total_raw) if pd.notna(row_total_raw) and row_total_raw > 0 else 0
+                style_total += row_total
+
+                name_val = style if ci == 0 else ''
+                sc(ws, cur_row, 1, name_val, fill=row_fill, align=left_a, border=tb())
+                sc(ws, cur_row, 2, color,    fill=row_fill, align=left_a, border=tb())
+
+                for j, sz in enumerate(sizes, 3):
+                    raw = pivot.get(sz, None)
+                    val = int(raw) if has_qty and pd.notna(raw) and raw > 0 else ''
+                    sc(ws, cur_row, j, val, fill=row_fill, align=center, border=tb())
+
+                total_val = row_total if has_qty else ''
+                sc(ws, cur_row, 3 + len(sizes), total_val, bold=True, fill=row_fill, align=center, border=tb())
+                cur_row += 1
+
+            grand_total += style_total
+
+            # 품목명 병합 (여러 컬러)
+            if len(color_order) > 1:
+                ws.merge_cells(f'A{style_first_row}:A{cur_row - 1}')
+                ws.cell(row=style_first_row, column=1).alignment = Alignment(
+                    horizontal='left', vertical='center', wrap_text=True
+                )
+
+        # ── GRAND TOTAL 행
+        cur_row += 1
+        ws.merge_cells(f'A{cur_row}:B{cur_row}')
+        sc(ws, cur_row, 1, 'GRAND TOTAL', bold=True, fill=col_fill, align=center)
+        for j, sz in enumerate(sizes, 3):
+            if has_qty:
+                sz_total = int(df_s.groupby('사이즈')['현재고'].sum().get(sz, 0))
+                sc(ws, cur_row, j, sz_total if sz_total > 0 else '', bold=True, fill=col_fill, align=center)
+            else:
+                sc(ws, cur_row, j, '', bold=True, fill=col_fill, align=center)
+        total_val = grand_total if has_qty else ''
+        sc(ws, cur_row, 3 + len(sizes), total_val, bold=True, fill=col_fill, align=center)
 
     buf = io.BytesIO()
     wb.save(buf)
