@@ -263,155 +263,397 @@ def get_season_from_sku(sku: str) -> str:
     return '기타'
 
 def list_to_sheet(df_raw: pd.DataFrame) -> io.BytesIO:
+    """
+    제품리스트 (SKU / 품목명 / Color / 사이즈 / 현재고)
+    → 제품 시트 Excel  (911 양식 색상 체계 적용, STYLE NO. 포함)
+
+    색상 규칙 (글씨는 항상 검정):
+      V2    : theme:0 tint=-0.05  ↔  theme:9 tint=0.80
+      EASY  : theme:8 tint=0.80  ↔  theme:0 tint=-0.05
+      ORBAN : theme:7 tint=0.80  ↔  theme:0 tint=-0.05
+      SGx28 : theme:8 tint=0.80  ↔  theme:0 tint=-0.05
+      SGxIG : theme:9 tint=0.80  ↔  theme:0 tint=-0.05
+      SGxAP : theme:7 tint=0.80  ↔  theme:0 tint=-0.05
+      기타  : theme:5 tint=0.80  ↔  theme:0 tint=-0.05
+    섹션 헤더:  컬렉션 고유색 tint=0.40
+    """
+    from openpyxl import Workbook
     from openpyxl.utils import get_column_letter
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side, numbers
+    from openpyxl.styles.colors import Color
+
     df = df_raw.copy()
+
+    # ── 컬럼 정규화
     rename = {}
     for c in df.columns:
         cl = c.strip().lower()
         if cl in ('품목명','style','item name','product name','description'): rename[c] = '품목명'
-        elif cl in ('color','컬러','colour','색상'): rename[c] = 'Color'
-        elif cl in ('사이즈','size','sz'): rename[c] = '사이즈'
+        elif cl in ('color','컬러','colour','색상'):  rename[c] = 'Color'
+        elif cl in ('사이즈','size','sz'):             rename[c] = '사이즈'
         elif cl in ('현재고','qty','수량','quantity','current qty','currentqty'): rename[c] = '현재고'
-        elif cl == 'sku': rename[c] = 'SKU'
+        elif cl == 'sku':                               rename[c] = 'SKU'
     df = df.rename(columns=rename)
-    required = {'품목명','Color','사이즈'}
+
+    required = {'품목명', 'Color', '사이즈'}
     missing = required - set(df.columns)
-    if missing: raise ValueError(f"필수 컬럼 없음: {missing}\n현재 컬럼: {list(df.columns)}")
+    if missing:
+        raise ValueError(f"필수 컬럼 없음: {missing}")
+
     if '현재고' not in df.columns: df['현재고'] = None
     df['현재고'] = pd.to_numeric(df['현재고'], errors='coerce')
     df['품목명'] = df['품목명'].astype(str).str.strip()
     df['Color']  = df['Color'].astype(str).str.strip()
     df['사이즈'] = df['사이즈'].astype(str).str.strip()
-    if 'SKU' in df.columns: df['_시즌'] = df['SKU'].apply(get_season_from_sku)
-    else: df['_시즌'] = '전체'
+
+    # ── SKU에서 시즌 + 베이스코드 추출
+    def get_season(sku):
+        m = re.search(r'\d{3}[WwSs](\d{2})', str(sku))
+        return f'{int(m.group(1))-1}{m.group(1)}' if m else '기타'
+
+    def get_base_code(sku):
+        """사이즈 suffix 제거 → 베이스 코드"""
+        for sz in ['3XL','2XL','XL','FREE','XS','S','M','L']:
+            if str(sku).upper().endswith(sz):
+                return str(sku)[:-len(sz)]
+        return str(sku)
+
+    if 'SKU' in df.columns:
+        df['_시즌']    = df['SKU'].apply(get_season)
+        df['_base']   = df['SKU'].apply(get_base_code)
+    else:
+        df['_시즌']    = '전체'
+        df['_base']   = ''
+
     season_order = sorted([s for s in df['_시즌'].unique() if s != '기타'], reverse=True)
     if '기타' in df['_시즌'].unique(): season_order.append('기타')
+
     has_qty = df['현재고'].notna().any()
-    wb = Workbook(); wb.remove(wb.active)
+
+    # ── 색상 팔레트 정의
+    # (theme, tint) 쌍
+    PALETTE = {
+        'V2':    [(0, -0.05), (9,  0.80)],
+        'EASY':  [(8,  0.80), (0, -0.05)],
+        'ORBAN': [(7,  0.80), (0, -0.05)],
+        'SGx28': [(8,  0.80), (0, -0.05)],
+        'SGxIG': [(9,  0.80), (0, -0.05)],
+        'SGxAP': [(7,  0.80), (0, -0.05)],
+        'OTHER': [(5,  0.80), (0, -0.05)],
+    }
+    SECTION_THEME = {'V2':0,'EASY':8,'ORBAN':7,'SGx28':8,'SGxIG':9,'SGxAP':7,'OTHER':5}
+    SECTION_TINT  = 0.40
+    HDR_THEME, HDR_TINT = 4, 0.0   # 헤더행 (회색)
+    TITLE_THEME, TITLE_TINT = 5, 0.0
+
+    def make_fill(theme_idx, tint):
+        c = Color(theme=theme_idx, tint=tint, type='theme')
+        return PatternFill(patternType='solid', fgColor=c)
+
+    def get_group(name):
+        n = str(name).upper().strip()
+        if 'SGX28' in n.replace(' ','') or 'SGX28' in n or 'SGx28' in name: return 'SGx28'
+        if 'SGXIG' in n.replace(' ','') or 'SGxIG' in name: return 'SGxIG'
+        if 'SGXAP' in n.replace(' ','') or 'SGxAP' in name: return 'SGxAP'
+        if n.startswith('V2') or ' V2 ' in n or name.startswith('V2'): return 'V2'
+        if 'EASY' in n: return 'EASY'
+        if 'ORBAN' in n: return 'ORBAN'
+        return 'OTHER'
+
+    def get_category(name):
+        n = str(name).upper()
+        if any(k in n for k in ['JACKET','ANORAK','BOMBER','PARKA','WIND','VEST','BIKER JAC','DUFFLE']): return 'OUTER'
+        if any(k in n for k in ['PANTS','CARGO','BIB','BALLOON','KENDO']): return 'PANTS'
+        if any(k in n for k in ['HOODIE','CREWNECK','POLO','SWEAT','ADJUST','LINEWORK','STRAY','WIDE HOOD','ADJUST HOOD']): return 'TOP'
+        if any(k in n for k in ['TEE','T-SHIRT','LONG SLEEVE','L/S']): return 'TEE'
+        if any(k in n for k in ['BEANIE','CAP','HAT','TRAPPER','BALACLAVA','WARMER']): return 'HAT'
+        if any(k in n for k in ['MITTENS','SOCKS','STOMPPAD','STOMP','ACC']): return 'ACC'
+        return 'ETC'
+
+    thin = Side(style='thin')
+    def bdr(): return Border(left=thin, right=thin, top=thin, bottom=thin)
+    black_font = Font(name='Arial', size=8, color='000000')
+    bold_font  = Font(name='Arial', size=8, color='000000', bold=True)
+    center_al  = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    left_al    = Alignment(horizontal='left',   vertical='center', wrap_text=True)
+
+    def write(ws, r, c, val, font=None, fill=None, align=None, border=None):
+        cell = ws.cell(r, c, value=val)
+        if font:   cell.font   = font
+        if fill:   cell.fill   = fill
+        if align:  cell.alignment = align
+        if border: cell.border = border
+        return cell
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    SIZE_COLS = ['S','M','L','XL','2XL','3XL']
+    # col indices: A=1 CATEGORY, B=2 PRODUCT NAME, C=3 STYLE NO., D=4 COLOR,
+    #              E~J=5~10 sizes, K=11 C-TOT, L=12 S-TOT, M=13 BASE PRICE
+
     for season in season_order:
         df_s = df[df['_시즌'] == season].copy()
         if df_s.empty: continue
-        all_sizes_in_season = df_s['사이즈'].unique().tolist()
-        sizes = [s for s in SIZE_COLS_SHEET if s in all_sizes_in_season] + \
-                [s for s in all_sizes_in_season if s not in SIZE_COLS_SHEET and s != 'FREE']
-        total_col = 3 + len(sizes); stot_col = 3 + len(sizes) + 1
-        size_start_col = 3; size_end_col = 2 + len(sizes)
-        style_order = list(dict.fromkeys(df_s['품목명'].tolist()))
+
+        # 이 시즌에 있는 사이즈
+        all_sz = [s for s in SIZE_COLS if s in df_s['사이즈'].unique()]
+        free_sz = df_s['사이즈'].isin({'FREE'}).any()
+
         ws = wb.create_sheet(title=str(season)[:31])
-        ws.column_dimensions['A'].width = 40; ws.column_dimensions['B'].width = 24
-        for i in range(len(sizes)): ws.column_dimensions[get_column_letter(3+i)].width = 7
-        ws.column_dimensions[get_column_letter(total_col)].width = 9
-        ws.column_dimensions[get_column_letter(stot_col)].width  = 9
-        sc(ws, 1, 1, '품목명', bold=True, fill=col_fill, align=center, border=tb())
-        sc(ws, 1, 2, 'Color',  bold=True, fill=col_fill, align=center, border=tb())
-        for j, sz in enumerate(sizes, 3): sc(ws, 1, j, sz, bold=True, fill=col_fill, align=center, border=tb())
-        sc(ws, 1, total_col, 'TOTAL', bold=True, fill=col_fill, align=center, border=tb())
-        sc(ws, 1, stot_col,  'S-TOT', bold=True, fill=PatternFill('solid', fgColor='BDD7EE'), align=center, border=tb())
-        cur_row = 2; grand_total = 0
-        import re as _re
-        GROUP_FILL = {
-            'V2':('E2EFDA','C6E0B4'),'EASY':('DDEBF7','BDD7EE'),
-            'ORBAN':('FFEB9C','FFD966'),'COLLAB':('FCE4D6','F4B183'),'OTHER':('F2F2F2','D9D9D9'),
-        }
-        def get_group(name):
-            n = _re.sub(r'^\d+\.\s*','', str(name)).strip()
-            tok = n.split()[0] if n.split() else ''
-            if tok == 'V2': return 'V2'
-            if tok == 'EASY': return 'EASY'
-            if tok == 'ORBAN': return 'ORBAN'
-            if tok.startswith('SG') and 'x' in tok.lower(): return 'COLLAB'
-            if 'SPECIALGUEST' in n.upper() and 'X' in n.upper(): return 'COLLAB'
-            return 'OTHER'
-        def get_subgroup(name):
-            n = _re.sub(r'^\d+\.\s*','', str(name)).strip()
-            tok = n.split()[0] if n.split() else ''
-            return tok.upper() if tok.upper().startswith('SG') else ''
-        prev_group = None; prev_subgroup = None
-        for si, style in enumerate(style_order):
-            cur_group = get_group(style); cur_subgroup = get_subgroup(style) if cur_group == 'COLLAB' else ''
-            need_gap = 0
-            if prev_group is not None:
-                if cur_group != prev_group:
-                    need_gap = 2 if (cur_group in ('V2','EASY','ORBAN') or prev_group in ('V2','EASY','ORBAN')) else 1
-                elif cur_group == 'COLLAB' and cur_subgroup != prev_subgroup: need_gap = 1
-            for _ in range(need_gap):
-                for col in range(1, stot_col+1): ws.cell(row=cur_row, column=col).value = None
+
+        # 컬럼 너비
+        ws.column_dimensions['A'].width = 10
+        ws.column_dimensions['B'].width = 42
+        ws.column_dimensions['C'].width = 16
+        ws.column_dimensions['D'].width = 24
+        for sz_col in ['E','F','G','H','I','J']:
+            ws.column_dimensions[sz_col].width = 4.5
+        ws.column_dimensions['K'].width = 7
+        ws.column_dimensions['L'].width = 7
+        ws.column_dimensions['M'].width = 13
+
+        # ── 행1: 타이틀
+        ws.merge_cells('A1:M1')
+        title_fill = make_fill(TITLE_THEME, TITLE_TINT)
+        write(ws, 1, 1, f'SPECIALGUEST® 20{season[-2:] if len(season)==4 else season}FW Season Product-List',
+              font=Font(name='Arial', size=10, bold=True, color='000000'),
+              fill=title_fill, align=center_al)
+        ws.row_dimensions[1].height = 18
+
+        # ── 행2: 헤더
+        hdr_fill = make_fill(HDR_THEME, HDR_TINT)
+        headers = ['CATEGORY','PRODUCT NAME','STYLE NO.','COLOR'] + all_sz + ['C-TOT','S-TOT','BASE PRICE']
+        # 사이즈가 없으면 FREE 컬럼 (병합용)
+        if not all_sz and free_sz:
+            headers = ['CATEGORY','PRODUCT NAME','STYLE NO.','COLOR','QTY','','','','','','C-TOT','S-TOT','BASE PRICE']
+        for ci, h in enumerate(headers, 1):
+            write(ws, 2, ci, h, font=bold_font, fill=hdr_fill, align=center_al, border=bdr())
+        ws.row_dimensions[2].height = 14
+
+        cur_row = 3
+
+        # 품목명 한글이면 영문으로 변환 (KR_TO_EN_911 매핑 활용)
+        def to_en_name(name):
+            # 직접 매핑
+            if name in KR_TO_EN_911:
+                return KR_TO_EN_911[name]
+            # 이미 영문이면 그대로
+            if re.match(r'^[A-Za-z0-9]', str(name)):
+                return name
+            # 한글이지만 매핑 없음 → 그대로 유지
+            return name
+        df_s = df_s.copy()
+        df_s['품목명'] = df_s['품목명'].apply(to_en_name)
+
+        # 품목명 순서 보존
+        style_order = list(dict.fromkeys(df_s['품목명'].tolist()))
+
+        prev_group = None
+        grp_item_idx = {}  # 그룹 내 품목 인덱스 (교대색용)
+
+        for style in style_order:
+            grp = get_group(style)
+            cat = get_category(style)
+            palette = PALETTE[grp]
+
+            # 그룹 내 인덱스
+            if grp not in grp_item_idx: grp_item_idx[grp] = 0
+            item_idx = grp_item_idx[grp]
+            row_fill = make_fill(*palette[item_idx % 2])
+
+            # 그룹 섹션 헤더 삽입
+            if grp != prev_group:
+                # 섹션명
+                section_names = {
+                    'V2':'V2 Collection','EASY':'EASY Collection',
+                    'ORBAN':'ORBAN Collection','SGx28':'SPECIALGUEST®  x  RICE28',
+                    'SGxIG':'SPECIALGUEST®  x  Insane Garage',
+                    'SGxAP':'SPECIALGUEST®  x  Andre Park',
+                    'OTHER':'ETC'
+                }
+                if prev_group is not None:
+                    # 그룹 사이 빈 행
+                    cur_row += 1
+                sec_fill = make_fill(SECTION_THEME[grp], SECTION_TINT)
+                ws.merge_cells(f'A{cur_row}:M{cur_row}')
+                write(ws, cur_row, 1, section_names.get(grp, grp),
+                      font=Font(name='Arial', size=9, bold=True, color='000000'),
+                      fill=sec_fill, align=left_al)
+                ws.row_dimensions[cur_row].height = 14
                 cur_row += 1
-            prev_group = cur_group; prev_subgroup = cur_subgroup
+                prev_group = grp
+
+            grp_item_idx[grp] = item_idx + 1
+
+            # 이 품목의 컬러 목록
             sdf = df_s[df_s['품목명'] == style]
             color_order = list(dict.fromkeys(sdf['Color'].tolist()))
-            style_first_row = cur_row; style_total = 0
-            main_hex, stot_hex = GROUP_FILL[cur_group]
-            grp_styles = [s for s in style_order if get_group(s) == cur_group]
-            grp_idx = grp_styles.index(style)
-            if grp_idx % 2 == 0:
-                row_fill = PatternFill('solid', fgColor=main_hex); stot_fill = PatternFill('solid', fgColor=stot_hex)
-            else:
-                lighter = 'F7FCF5' if cur_group=='V2' else ('EEF5FB' if cur_group=='EASY' else ('FFFDE7' if cur_group=='ORBAN' else ('FDF2EC' if cur_group=='COLLAB' else 'FAFAFA')))
-                row_fill = PatternFill('solid', fgColor=lighter); stot_fill = PatternFill('solid', fgColor=main_hex)
-            item_sizes = set(sdf['사이즈'].unique())
-            is_free = item_sizes <= {'FREE'}
-            is_mittens = bool(item_sizes & {'SM','LXL'})
-            has_s_in_season = 'S' in sizes
-            if is_mittens:
-                sm_start = sizes.index('S')+3 if has_s_in_season else sizes.index('M')+3
-                sm_end = sizes.index('L')+3
-                lxl_start = sizes.index('XL')+3
-                lxl_end = sizes.index('3XL')+3 if '3XL' in sizes else (sizes.index('2XL')+3 if '2XL' in sizes else lxl_start)
+            style_first_row = cur_row
+            style_total = 0
+
+            is_free = sdf['사이즈'].isin({'FREE'}).all()
+
+            # 베이스 코드: 컬러별 첫 번째 SKU에서 추출
+            def base_for_color(color):
+                rows = sdf[sdf['Color'] == color]
+                if '_base' in rows.columns and rows['_base'].iloc[0]:
+                    return rows['_base'].iloc[0]
+                return ''
+
             for ci, color in enumerate(color_order):
-                cdf = sdf[sdf['Color'] == color]; pivot = cdf.groupby('사이즈')['현재고'].sum()
-                row_total_raw = pivot.sum(); row_total = int(row_total_raw) if pd.notna(row_total_raw) and row_total_raw > 0 else 0
-                style_total += row_total; name_val = style if ci == 0 else ''
-                sc(ws, cur_row, 1, name_val, fill=row_fill, align=left_a, border=tb())
-                sc(ws, cur_row, 2, color, fill=row_fill, align=left_a, border=tb())
+                cdf = sdf[sdf['Color'] == color]
+                base_code = base_for_color(color)
+                pivot = cdf.groupby('사이즈')['현재고'].sum()
+
+                row_total_raw = pivot.sum()
+                row_total = int(row_total_raw) if has_qty and pd.notna(row_total_raw) and row_total_raw > 0 else 0
+                style_total += row_total
+
+                # A: CATEGORY (첫 컬러만)
+                write(ws, cur_row, 1, cat if ci == 0 else '',
+                      font=black_font, fill=row_fill, align=center_al, border=bdr())
+                # B: PRODUCT NAME (첫 컬러만)
+                write(ws, cur_row, 2, style if ci == 0 else '',
+                      font=black_font, fill=row_fill, align=left_al, border=bdr())
+                # C: STYLE NO.
+                write(ws, cur_row, 3, base_code,
+                      font=black_font, fill=row_fill, align=center_al, border=bdr())
+                # D: COLOR
+                write(ws, cur_row, 4, color,
+                      font=black_font, fill=row_fill, align=left_al, border=bdr())
+
                 if is_free:
+                    # 사이즈 없는 품목: E~J 병합
+                    for col in range(5, 11):
+                        write(ws, cur_row, col, '', fill=row_fill, border=bdr())
+                    ws.merge_cells(start_row=cur_row, start_column=5,
+                                   end_row=cur_row, end_column=10)
                     free_raw = pivot.get('FREE', None)
-                    free_val = int(free_raw) if has_qty and pd.notna(free_raw) and free_raw > 0 else ''
-                    for j in range(size_start_col, size_end_col+1): sc(ws, cur_row, j, '', fill=row_fill, border=tb())
-                    ws.merge_cells(start_row=cur_row, start_column=size_start_col, end_row=cur_row, end_column=size_end_col)
-                    mc = ws.cell(row=cur_row, column=size_start_col, value=free_val)
-                    mc.font = Font(name='Arial', bold=True, size=9); mc.fill = row_fill
-                    mc.alignment = Alignment(horizontal='center', vertical='center'); mc.border = Border(left=thin, right=thin, top=thin, bottom=thin)
-                elif is_mittens:
-                    sm_raw = pivot.get('SM', None)
-                    sm_val = int(sm_raw) if has_qty and pd.notna(sm_raw) and sm_raw > 0 else ''
-                    for j in range(size_start_col, size_end_col+1): sc(ws, cur_row, j, '', fill=row_fill, border=tb())
-                    ws.merge_cells(start_row=cur_row, start_column=sm_start, end_row=cur_row, end_column=sm_end)
-                    mc = ws.cell(row=cur_row, column=sm_start, value=sm_val)
-                    mc.font = Font(name='Arial', bold=True, size=9); mc.fill = row_fill
-                    mc.alignment = Alignment(horizontal='center', vertical='center'); mc.border = Border(left=thin, right=thin, top=thin, bottom=thin)
-                    lxl_raw = pivot.get('LXL', None)
-                    lxl_val = int(lxl_raw) if has_qty and pd.notna(lxl_raw) and lxl_raw > 0 else ''
-                    ws.merge_cells(start_row=cur_row, start_column=lxl_start, end_row=cur_row, end_column=lxl_end)
-                    mc2 = ws.cell(row=cur_row, column=lxl_start, value=lxl_val)
-                    mc2.font = Font(name='Arial', bold=True, size=9); mc2.fill = row_fill
-                    mc2.alignment = Alignment(horizontal='center', vertical='center'); mc2.border = Border(left=thin, right=thin, top=thin, bottom=thin)
+                    free_val = int(free_raw) if has_qty and pd.notna(free_raw) and free_raw > 0 else (0 if has_qty else '')
+                    mc = ws.cell(cur_row, 5, value=free_val)
+                    mc.font = black_font; mc.fill = row_fill
+                    mc.alignment = center_al; mc.border = bdr()
                 else:
-                    for j, sz in enumerate(sizes, 3):
-                        raw = pivot.get(sz, None); val = int(raw) if has_qty and pd.notna(raw) and raw > 0 else ''
-                        sc(ws, cur_row, j, val, fill=row_fill, align=center, border=tb())
-                sc(ws, cur_row, total_col, row_total if has_qty else '', bold=True, fill=row_fill, align=center, border=tb())
-                sc(ws, cur_row, stot_col, '', fill=stot_fill, border=tb()); cur_row += 1
-            grand_total += style_total
+                    for si, sz in enumerate(SIZE_COLS, 5):
+                        raw = pivot.get(sz, None)
+                        val = int(raw) if has_qty and pd.notna(raw) and raw > 0 else (0 if has_qty else '')
+                        write(ws, cur_row, si, val,
+                              font=black_font, fill=row_fill, align=center_al, border=bdr())
+
+                # K: C-TOT 수식
+                k_cell = write(ws, cur_row, 11, f'=SUM(E{cur_row}:J{cur_row})',
+                               font=black_font, fill=row_fill, align=center_al, border=bdr())
+
+                # L: S-TOT (첫 컬러만, 나중에 병합)
+                write(ws, cur_row, 12, '', font=black_font, fill=row_fill, align=center_al, border=bdr())
+
+                # M: BASE PRICE (첫 컬러만, 가격 다른 경우 각 행)
+                write(ws, cur_row, 13, '', font=black_font, fill=row_fill, align=center_al, border=bdr())
+
+                cur_row += 1
+
+            # B열 품목명 병합
             if len(color_order) > 1:
+                ws.merge_cells(f'B{style_first_row}:B{cur_row-1}')
+                ws.cell(style_first_row, 2).alignment = Alignment(
+                    horizontal='left', vertical='center', wrap_text=True)
+                # A열 카테고리 병합
                 ws.merge_cells(f'A{style_first_row}:A{cur_row-1}')
-                ws.cell(row=style_first_row, column=1).alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
-                ws.merge_cells(start_row=style_first_row, start_column=stot_col, end_row=cur_row-1, end_column=stot_col)
-            stot_val = style_total if has_qty else ''
-            mc = ws.cell(row=style_first_row, column=stot_col, value=stot_val)
-            mc.font = Font(name='Arial', bold=True, size=9); mc.fill = stot_fill
-            mc.alignment = Alignment(horizontal='center', vertical='center'); mc.border = Border(left=thin, right=thin, top=thin, bottom=thin)
-        cur_row += 1; ws.merge_cells(f'A{cur_row}:B{cur_row}')
-        sc(ws, cur_row, 1, 'GRAND TOTAL', bold=True, fill=col_fill, align=center)
-        for j, sz in enumerate(sizes, 3):
-            if has_qty:
-                sz_total = int(df_s[df_s['사이즈'] != 'FREE'].groupby('사이즈')['현재고'].sum().get(sz, 0))
-                sc(ws, cur_row, j, sz_total if sz_total > 0 else '', bold=True, fill=col_fill, align=center)
-            else: sc(ws, cur_row, j, '', bold=True, fill=col_fill, align=center)
-        total_val = grand_total if has_qty else ''
-        sc(ws, cur_row, total_col, total_val, bold=True, fill=col_fill, align=center)
-        sc(ws, cur_row, stot_col,  total_val, bold=True, fill=PatternFill('solid', fgColor='BDD7EE'), align=center)
-    buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+                ws.cell(style_first_row, 1).alignment = center_al
+
+            # L열 S-TOT 수식 + 병합
+            s_tot_formula = f'=SUM(K{style_first_row}:K{cur_row-1})'
+            if len(color_order) > 1:
+                ws.merge_cells(f'L{style_first_row}:L{cur_row-1}')
+            ws.cell(style_first_row, 12).value = s_tot_formula
+            ws.cell(style_first_row, 12).font  = black_font
+            ws.cell(style_first_row, 12).fill  = row_fill
+            ws.cell(style_first_row, 12).alignment = center_al
+            ws.cell(style_first_row, 12).border = bdr()
+
+        # GRAND TOTAL 행
+        cur_row += 1
+        ws.merge_cells(f'A{cur_row}:D{cur_row}')
+        gt_fill = make_fill(HDR_THEME, HDR_TINT)
+        write(ws, cur_row, 1, 'GRAND TOTAL', font=bold_font, fill=gt_fill, align=center_al)
+        for si in range(5, 12):
+            write(ws, cur_row, si, f'=SUM({get_column_letter(si)}3:{get_column_letter(si)}{cur_row-1})',
+                  font=bold_font, fill=gt_fill, align=center_al)
+        write(ws, cur_row, 12, f'=SUM(L3:L{cur_row-1})', font=bold_font, fill=gt_fill, align=center_al)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+def fill_product_sheet(template_file, stock_file):
+    """
+    제품 시트 템플릿(C열=STYLE NO. 베이스코드)에
+    재고 파일(자사코드 SKU 기준)의 수량을 채워넣기.
+    여러 시트(시즌별)도 모두 처리.
+    """
+    from openpyxl.cell.cell import MergedCell as _MC
+
+    # ── 재고 lookup: (베이스코드.upper(), 사이즈.upper()) → 수량
+    stock = pd.read_excel(stock_file)
+    stock_col = next((c for c in stock.columns if '911' in str(c) or '현재고' in str(c)), stock.columns[-1])
+
+    def get_base_sz(sku):
+        for sz in ['3XL','2XL','XL','FREE','XS','S','M','L']:
+            if str(sku).upper().endswith(sz):
+                return str(sku)[:-len(sz)].upper(), sz.upper()
+        return str(sku).upper(), 'FREE'
+
+    lookup = {}
+    for _, row in stock.iterrows():
+        base, sz = get_base_sz(str(row['자사코드']))
+        qty = row[stock_col]
+        lookup[(base, sz)] = int(qty) if pd.notna(qty) else 0
+
+    # ── 템플릿 로드
+    tpl_bytes = template_file.read() if hasattr(template_file, 'read') else open(template_file,'rb').read()
+    wb = load_workbook(io.BytesIO(tpl_bytes))
+
+    total_filled = 0
+    for ws in wb.worksheets:
+        # 헤더 행: STYLE NO. 포함한 행
+        header_row = None
+        size_col_map = {}
+        for r in range(1, min(ws.max_row+1, 10)):
+            for c in range(1, ws.max_column+1):
+                v = ws.cell(r, c).value
+                if v and str(v).strip().upper() == 'STYLE NO.':
+                    header_row = r
+                    break
+            if header_row: break
+        if not header_row:
+            continue
+
+        for c in range(1, ws.max_column+1):
+            v = ws.cell(header_row, c).value
+            if v and str(v).strip().upper() in ['S','M','L','XL','2XL','3XL']:
+                size_col_map[str(v).strip().upper()] = c
+
+        # 데이터 행 채우기
+        for r in range(header_row+1, ws.max_row+1):
+            c3 = ws.cell(r, 3)
+            if isinstance(c3, _MC) or not c3.value:
+                continue
+            base = str(c3.value).strip().upper()
+            for sz, col in size_col_map.items():
+                target = ws.cell(r, col)
+                if not isinstance(target, _MC):
+                    qty = lookup.get((base, sz), 0)
+                    target.value = qty if qty > 0 else 0
+                    if qty > 0:
+                        total_filled += 1
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf, total_filled
+
 
 def sheet_to_list(xlsx_file, base_csv: pd.DataFrame = None) -> pd.DataFrame:
     wb = load_workbook(xlsx_file, data_only=True); ws = wb.active
@@ -857,26 +1099,38 @@ with tab2:
     st.caption("제품 리스트 ↔ 제품 시트 양방향 변환")
     sub_tab1, sub_tab2 = st.tabs(["📋 리스트 → 시트", "📊 시트 → 리스트"])
     with sub_tab1:
-        st.markdown("**제품리스트 CSV** → **제품 시트 Excel**\n품목명 × Color 행, S/M/L/XL/2XL/3XL 열 피벗으로 변환합니다.\n현재고가 있으면 수량 채워서 생성, 없으면 빈 칸 시트(주문서용)로 생성합니다.")
+        st.caption("제품 시트 템플릿 + 재고 파일 → STYLE NO. 기준으로 수량 자동 입력")
         st.divider()
-        l2s_file = st.file_uploader("제품리스트 업로드 (.csv 또는 .xlsx)", type=['csv','xlsx'], key="l2s_upload")
-        if l2s_file:
-            try:
-                if l2s_file.name.endswith('.csv'): df_l2s = pd.read_csv(l2s_file, encoding='utf-8-sig')
-                else: df_l2s = pd.read_excel(l2s_file)
-                total_rows = len(df_l2s); has_qty = '현재고' in df_l2s.columns and df_l2s['현재고'].notna().any()
-                styles_count = df_l2s.iloc[:,1].nunique() if len(df_l2s.columns) > 1 else 0
-                c1, c2, c3 = st.columns(3)
-                c1.metric("총 행수", f"{total_rows:,}"); c2.metric("품목 수", f"{styles_count}"); c3.metric("현재고", "있음 ✅" if has_qty else "없음 (빈 칸 시트)")
-                with st.expander("미리보기 (상위 10행)"): st.dataframe(df_l2s.head(10), use_container_width=True)
-                if st.button("▶️ 시트로 변환", key="l2s_btn", use_container_width=True, type="primary"):
-                    with st.spinner("변환 중..."):
-                        result_buf = list_to_sheet(df_l2s); ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-                        st.success(f"✅ 변환 완료! — {styles_count}개 품목")
-                        st.download_button("⬇️ 제품 시트 Excel 다운로드", data=result_buf, file_name=f"제품시트_{ts}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-            except Exception as e:
-                st.error(f"❌ 오류: {e}"); import traceback; st.code(traceback.format_exc())
-        else: st.info("👆 제품리스트 CSV 또는 Excel 파일을 업로드해주세요.")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            l2s_tpl = st.file_uploader("① 제품 시트 템플릿 (.xlsx)", type=['xlsx'], key="l2s_tpl")
+            st.caption("📌 C열에 STYLE NO.(베이스코드) 있는 시트")
+        with col_b:
+            l2s_stock = st.file_uploader("② 재고 파일 (.xlsx)", type=['xlsx'], key="l2s_stock")
+            st.caption("📌 자사코드 + [매장] 오프라인_911스포츠 컬럼 있는 파일")
+        if l2s_tpl and l2s_stock:
+            with st.spinner("수량 채우는 중..."):
+                try:
+                    result_buf, filled_count = fill_product_sheet(l2s_tpl, l2s_stock)
+                    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    tpl_name = l2s_tpl.name.replace('.xlsx','')
+                    st.success(f"✅ 완료 — {filled_count}개 셀에 수량 입력됨")
+                    st.download_button(
+                        "⬇️ 수량 채워진 제품 시트 다운로드",
+                        data=result_buf,
+                        file_name=f"{tpl_name}_재고입력_{ts}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        type="primary"
+                    )
+                except Exception as e:
+                    st.error(f"❌ 오류: {e}"); import traceback; st.code(traceback.format_exc())
+        elif l2s_tpl and not l2s_stock:
+            st.warning("② 재고 파일도 업로드해주세요.")
+        elif l2s_stock and not l2s_tpl:
+            st.warning("① 제품 시트 템플릿도 업로드해주세요.")
+        else:
+            st.info("👆 제품 시트 템플릿과 재고 파일을 모두 업로드해주세요.")
     with sub_tab2:
         st.markdown("**제품 시트 Excel** → **제품리스트 CSV**\n시트에서 현재고를 읽어, 기존 제품리스트의 `현재고` 컬럼을 채워서 반환합니다.")
         st.divider()
