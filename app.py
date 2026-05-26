@@ -150,11 +150,11 @@ def make_invoice(df, messrs, destination, date_str):
     border_all = Border(left=thin, right=thin, top=thin, bottom=thin)
     border_right_only = Border(right=thin)
     
-    font_bold_9 = Font(name='Arial', bold=True, size=9)
-    font_normal_8 = Font(name='Arial', size=8)
+    font_bold_aptos = Font(name='Aptos', bold=True, size=9)
+    font_normal_aptos = Font(name='Aptos', size=9)
     
-    align_left_center = Alignment(horizontal='left', vertical='center', wrap_text=True)
-    align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    align_left_wrap = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    align_center_wrap = Alignment(horizontal='center', vertical='center', wrap_text=True)
     
     # ─────────────────────────────────
     # 1행: 헤더 (셀 병합 포함)
@@ -164,20 +164,20 @@ def make_invoice(df, messrs, destination, date_str):
     
     # A: NO.
     cell = ws.cell(row=1, column=1, value='NO.')
-    cell.font = font_bold_9
-    cell.alignment = align_center
+    cell.font = font_bold_aptos
+    cell.alignment = align_center_wrap
     cell.border = border_all
     
     # B: HS CODE
     cell = ws.cell(row=1, column=2, value='HS CODE')
-    cell.font = font_bold_9
-    cell.alignment = align_center
+    cell.font = font_bold_aptos
+    cell.alignment = align_center_wrap
     cell.border = border_all
     
     # C-D: Description of goods (병합)
     cell = ws.cell(row=1, column=3, value='Description of goods')
-    cell.font = font_bold_9
-    cell.alignment = align_left_center
+    cell.font = font_bold_aptos
+    cell.alignment = align_left_wrap
     cell.border = border_all
     
     cell = ws.cell(row=1, column=4)
@@ -186,8 +186,8 @@ def make_invoice(df, messrs, destination, date_str):
     
     # E-G: Fabric ratio (병합)
     cell = ws.cell(row=1, column=5, value='Fabric ratio')
-    cell.font = font_bold_9
-    cell.alignment = align_left_center
+    cell.font = font_bold_aptos
+    cell.alignment = align_left_wrap
     cell.border = border_all
     
     cell = ws.cell(row=1, column=6)
@@ -199,20 +199,20 @@ def make_invoice(df, messrs, destination, date_str):
     
     # H: QTY
     cell = ws.cell(row=1, column=8, value='QTY')
-    cell.font = font_bold_9
-    cell.alignment = align_center
+    cell.font = font_bold_aptos
+    cell.alignment = align_center_wrap
     cell.border = border_all
     
     # I: Unit Price(KRW)
     cell = ws.cell(row=1, column=9, value='Unit Price(KRW)')
-    cell.font = font_bold_9
-    cell.alignment = align_center
+    cell.font = font_bold_aptos
+    cell.alignment = align_center_wrap
     cell.border = border_all
     
     # J: Amount(KRW)
     cell = ws.cell(row=1, column=10, value='Amount(KRW)')
-    cell.font = font_bold_9
-    cell.alignment = align_center
+    cell.font = font_bold_aptos
+    cell.alignment = align_center_wrap
     cell.border = border_all
     
     # ─────────────────────────────────
@@ -231,20 +231,20 @@ def make_invoice(df, messrs, destination, date_str):
         
         # A: NO.
         cell_a = ws.cell(row=cur_row, column=1, value=idx)
-        cell_a.font = font_bold_9
-        cell_a.alignment = align_center
+        cell_a.font = font_normal_aptos
+        cell_a.alignment = align_left_wrap
         cell_a.border = border_all
         
         # B: HS CODE
         cell_b = ws.cell(row=cur_row, column=2, value=row['HS Code'])
-        cell_b.font = font_bold_9
-        cell_b.alignment = align_center
+        cell_b.font = font_normal_aptos
+        cell_b.alignment = align_left_wrap
         cell_b.border = border_all
         
         # C-D: Description of goods (병합)
         cell_c = ws.cell(row=cur_row, column=3, value=row['품목명'])
-        cell_c.font = font_normal_8
-        cell_c.alignment = align_left_center
+        cell_c.font = font_normal_aptos
+        cell_c.alignment = align_left_wrap
         cell_c.border = border_all
         
         cell_d = ws.cell(row=cur_row, column=4)
@@ -254,8 +254,8 @@ def make_invoice(df, messrs, destination, date_str):
         
         # E-G: Fabric ratio (병합)
         cell_e = ws.cell(row=cur_row, column=5, value=row['Material'])
-        cell_e.font = font_normal_8
-        cell_e.alignment = align_left_center
+        cell_e.font = font_normal_aptos
+        cell_e.alignment = align_left_wrap
         cell_e.border = border_all
         
         cell_f = ws.cell(row=cur_row, column=6)
@@ -268,20 +268,20 @@ def make_invoice(df, messrs, destination, date_str):
         
         # H: QTY
         cell_h = ws.cell(row=cur_row, column=8, value=qty)
-        cell_h.font = font_normal_8
-        cell_h.alignment = align_center
+        cell_h.font = font_normal_aptos
+        cell_h.alignment = align_left_wrap
         cell_h.border = border_all
         
         # I: Unit Price(KRW)
         cell_i = ws.cell(row=cur_row, column=9, value=unit_price)
-        cell_i.font = font_normal_8
-        cell_i.alignment = align_center
+        cell_i.font = font_normal_aptos
+        cell_i.alignment = align_left_wrap
         cell_i.border = border_all
         
         # J: Amount(KRW)
         cell_j = ws.cell(row=cur_row, column=10, value=amount)
-        cell_j.font = font_normal_8
-        cell_j.alignment = align_center
+        cell_j.font = font_normal_aptos
+        cell_j.alignment = align_left_wrap
         cell_j.border = border_all
         
         total_qty += qty
@@ -295,8 +295,8 @@ def make_invoice(df, messrs, destination, date_str):
     
     # A-B: TOTAL
     cell_total = ws.cell(row=cur_row, column=1, value='TOTAL')
-    cell_total.font = font_bold_9
-    cell_total.alignment = align_center
+    cell_total.font = font_bold_aptos
+    cell_total.alignment = align_left_wrap
     cell_total.border = border_all
     
     cell = ws.cell(row=cur_row, column=2)
@@ -311,8 +311,8 @@ def make_invoice(df, messrs, destination, date_str):
     
     # H: 총 수량
     cell_h_total = ws.cell(row=cur_row, column=8, value=total_qty)
-    cell_h_total.font = font_bold_9
-    cell_h_total.alignment = align_center
+    cell_h_total.font = font_bold_aptos
+    cell_h_total.alignment = align_left_wrap
     cell_h_total.border = border_all
     
     # I: (빈칸)
@@ -321,8 +321,8 @@ def make_invoice(df, messrs, destination, date_str):
     
     # J: 총 금액
     cell_j_total = ws.cell(row=cur_row, column=10, value=total_amount)
-    cell_j_total.font = font_bold_9
-    cell_j_total.alignment = align_center
+    cell_j_total.font = font_bold_aptos
+    cell_j_total.alignment = align_left_wrap
     cell_j_total.border = border_all
     
     buf = io.BytesIO()
