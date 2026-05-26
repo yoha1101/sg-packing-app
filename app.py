@@ -126,9 +126,8 @@ def make_packing_list(boxes, destination):
 def make_invoice(df, messrs, destination, date_str):
     """
     업로드된 Invoice_20260526.xlsx 구조를 따르는 인보이스 생성
-    - 셀 병합: C1:D1, E1:G1, C2:D2, E2:G2 (헤더 행)
-    - 컬럼 너비: A=5, B=10, C=45, D=12, E=50, F=12
-    - 데이터 행의 셀 병합: C:D, E:G (각 행)
+    - 셀 병합: C1:D1, E1:G1 (헤더 행)
+    - 컬럼 순서: A(NO.) | B(HS CODE) | C-D(Description) | E-G(Fabric ratio) | H(QTY) | I(Unit Price) | J(Amount)
     """
     wb = Workbook()
     ws = wb.active
@@ -142,6 +141,9 @@ def make_invoice(df, messrs, destination, date_str):
     ws.column_dimensions['E'].width = 50
     ws.column_dimensions['F'].width = 12
     ws.column_dimensions['G'].width = 12
+    ws.column_dimensions['H'].width = 10
+    ws.column_dimensions['I'].width = 12
+    ws.column_dimensions['J'].width = 12
     
     # 스타일 정의
     thin = Side(style='thin')
@@ -158,19 +160,63 @@ def make_invoice(df, messrs, destination, date_str):
     # 1행: 헤더 (셀 병합 포함)
     # ─────────────────────────────────
     headers = ['NO.', 'HS CODE', 'Description of goods', 'QTY', 'Fabric ratio', 'Unit Price(KRW)', 'Amount(KRW)']
+    header_cols = [1, 2, 3, 8, 5, 9, 10]  # A, B, C, H, E, I, J
     
-    for col_idx, header_text in enumerate(headers, start=1):
-        cell = ws.cell(row=1, column=col_idx, value=header_text)
-        cell.font = font_bold_9
-        cell.alignment = align_center if col_idx == 1 else align_left_center
-        cell.border = border_all
+    # A: NO.
+    cell = ws.cell(row=1, column=1, value='NO.')
+    cell.font = font_bold_9
+    cell.alignment = align_center
+    cell.border = border_all
     
-    # 1행 셀 병합 (원본 파일 구조 복제)
-    ws.merge_cells('C1:D1')  # Description of goods
-    ws.merge_cells('E1:G1')  # Fabric ratio (E1:G1로 병합)
+    # B: HS CODE
+    cell = ws.cell(row=1, column=2, value='HS CODE')
+    cell.font = font_bold_9
+    cell.alignment = align_center
+    cell.border = border_all
+    
+    # C-D: Description of goods (병합)
+    cell = ws.cell(row=1, column=3, value='Description of goods')
+    cell.font = font_bold_9
+    cell.alignment = align_left_center
+    cell.border = border_all
+    
+    cell = ws.cell(row=1, column=4)
+    cell.border = border_right_only
+    ws.merge_cells('C1:D1')
+    
+    # E-G: Fabric ratio (병합)
+    cell = ws.cell(row=1, column=5, value='Fabric ratio')
+    cell.font = font_bold_9
+    cell.alignment = align_left_center
+    cell.border = border_all
+    
+    cell = ws.cell(row=1, column=6)
+    cell.border = border_right_only
+    
+    cell = ws.cell(row=1, column=7)
+    cell.border = border_right_only
+    ws.merge_cells('E1:G1')
+    
+    # H: QTY
+    cell = ws.cell(row=1, column=8, value='QTY')
+    cell.font = font_bold_9
+    cell.alignment = align_center
+    cell.border = border_all
+    
+    # I: Unit Price(KRW)
+    cell = ws.cell(row=1, column=9, value='Unit Price(KRW)')
+    cell.font = font_bold_9
+    cell.alignment = align_center
+    cell.border = border_all
+    
+    # J: Amount(KRW)
+    cell = ws.cell(row=1, column=10, value='Amount(KRW)')
+    cell.font = font_bold_9
+    cell.alignment = align_center
+    cell.border = border_all
     
     # ─────────────────────────────────
-    # 데이터 행 (2행부터) - 각 행마다 셀 병합
+    # 데이터 행 (2행부터)
     # ─────────────────────────────────
     grouped = df.groupby(['품목명', 'HS Code', 'Material', '단가(KRW)']).agg({'수량': 'sum'}).reset_index()
     
@@ -179,6 +225,10 @@ def make_invoice(df, messrs, destination, date_str):
     total_amount = 0
     
     for idx, (_, row) in enumerate(grouped.iterrows(), 1):
+        qty = int(row['수량'])
+        unit_price = int(row['단가(KRW)'])
+        amount = qty * unit_price
+        
         # A: NO.
         cell_a = ws.cell(row=cur_row, column=1, value=idx)
         cell_a.font = font_bold_9
@@ -216,19 +266,64 @@ def make_invoice(df, messrs, destination, date_str):
         
         ws.merge_cells(f'E{cur_row}:G{cur_row}')
         
-        total_qty += row['수량']
-        total_amount += row['수량'] * row['단가(KRW)']
+        # H: QTY
+        cell_h = ws.cell(row=cur_row, column=8, value=qty)
+        cell_h.font = font_normal_8
+        cell_h.alignment = align_center
+        cell_h.border = border_all
+        
+        # I: Unit Price(KRW)
+        cell_i = ws.cell(row=cur_row, column=9, value=unit_price)
+        cell_i.font = font_normal_8
+        cell_i.alignment = align_center
+        cell_i.border = border_all
+        
+        # J: Amount(KRW)
+        cell_j = ws.cell(row=cur_row, column=10, value=amount)
+        cell_j.font = font_normal_8
+        cell_j.alignment = align_center
+        cell_j.border = border_all
+        
+        total_qty += qty
+        total_amount += amount
         cur_row += 1
     
     # ─────────────────────────────────
-    # 합계행 (선택사항 - 필요시)
+    # 합계행
     # ─────────────────────────────────
-    # cur_row += 1
-    # cell_total = ws.cell(row=cur_row, column=1, value='TOTAL')
-    # cell_total.font = font_bold_9
-    # cell_total.alignment = align_center
-    # cell_total.border = border_all
-    # ws.merge_cells(f'A{cur_row}:B{cur_row}')
+    cur_row += 1
+    
+    # A-B: TOTAL
+    cell_total = ws.cell(row=cur_row, column=1, value='TOTAL')
+    cell_total.font = font_bold_9
+    cell_total.alignment = align_center
+    cell_total.border = border_all
+    
+    cell = ws.cell(row=cur_row, column=2)
+    cell.border = border_all
+    ws.merge_cells(f'A{cur_row}:B{cur_row}')
+    
+    # C-G: (병합, 빈칸)
+    for col in range(3, 8):
+        cell = ws.cell(row=cur_row, column=col)
+        cell.border = border_all if col == 3 else border_right_only
+    ws.merge_cells(f'C{cur_row}:G{cur_row}')
+    
+    # H: 총 수량
+    cell_h_total = ws.cell(row=cur_row, column=8, value=total_qty)
+    cell_h_total.font = font_bold_9
+    cell_h_total.alignment = align_center
+    cell_h_total.border = border_all
+    
+    # I: (빈칸)
+    cell = ws.cell(row=cur_row, column=9)
+    cell.border = border_all
+    
+    # J: 총 금액
+    cell_j_total = ws.cell(row=cur_row, column=10, value=total_amount)
+    cell_j_total.font = font_bold_9
+    cell_j_total.alignment = align_center
+    cell_j_total.border = border_all
     
     buf = io.BytesIO()
     wb.save(buf)
