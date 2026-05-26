@@ -127,28 +127,28 @@ def make_invoice(df, messrs, destination, date_str):
     wb = Workbook(); ws = wb.active; ws.title = 'Invoice'
     for col, width in [('A',5),('B',10),('C',45),('D',12),('E',50),('F',12),('G',12)]:
         ws.column_dimensions[col].width = width
-    ws.merge_cells('A1:G1'); sc(ws, 1, 1, 'COMMERCIAL INVOICE', bold=True, size=14, align=center, fill=hdr_fill, color='FFFFFF')
-    ws.row_dimensions[1].height = 25
-    sc(ws, 3, 1, 'SHIPPER:', bold=True); ws.merge_cells('A4:D4'); sc(ws, 4, 1, 'SPECIALGUEST®', bold=True)
-    ws.merge_cells('A5:D5'); sc(ws, 5, 1, '22, Misagangbyeonhangang-ro 346beon-gil, Hanam-si, Gyeonggi-do, 12923, Republic of Korea')
-    ws.merge_cells('A6:D6'); sc(ws, 6, 1, 'Tel: +82 7077643333  Email: specialguest.co.kr@gmail.com')
-    sc(ws, 8, 1, 'CONSIGNEE:', bold=True); ws.merge_cells('A9:D9'); sc(ws, 9, 1, messrs, bold=True)
-    sc(ws, 11, 1, 'DATE:', bold=True); sc(ws, 11, 2, date_str)
-    sc(ws, 12, 1, 'DESTINATION:', bold=True); sc(ws, 12, 2, destination)
+    
+    # 헤더행 (1행)
     headers = ['NO.','HS CODE','Description of goods','QTY','Fabric ratio','Unit Price(KRW)','Amount(KRW)']
-    for i, h in enumerate(headers, 1): sc(ws, 27, i, h, bold=True, fill=col_fill, align=center, border=tb())
+    for i, h in enumerate(headers, 1): 
+        sc(ws, 1, i, h, bold=True, fill=col_fill, align=center, border=tb())
+    
+    # 데이터 행 (2행부터)
     grouped = df.groupby(['품목명','HS Code','Material','단가(KRW)']).agg({'수량':'sum'}).reset_index()
-    cur_row = 28; total_qty = 0; total_amount = 0
+    cur_row = 2; total_qty = 0; total_amount = 0
     for idx, (_, row) in enumerate(grouped.iterrows(), 1):
         sc(ws, cur_row, 1, idx, align=center, border=tb()); sc(ws, cur_row, 2, row['HS Code'], align=center, border=tb())
         sc(ws, cur_row, 3, row['품목명'], align=left_a, border=tb()); sc(ws, cur_row, 4, row['수량'], align=center, border=tb())
         sc(ws, cur_row, 5, row['Material'], align=left_a, border=tb()); sc(ws, cur_row, 6, row['단가(KRW)'], align=center, border=tb())
         amount = row['수량'] * row['단가(KRW)']; sc(ws, cur_row, 7, amount, align=center, border=tb())
         total_qty += row['수량']; total_amount += amount; cur_row += 1
+    
+    # 합계행
     cur_row += 1; ws.merge_cells(f'A{cur_row}:C{cur_row}')
     sc(ws, cur_row, 1, 'TOTAL', bold=True, align=center, fill=col_fill, border=tb())
     sc(ws, cur_row, 4, total_qty, bold=True, align=center, fill=col_fill, border=tb())
     sc(ws, cur_row, 7, total_amount, bold=True, align=center, fill=col_fill, border=tb())
+    
     buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
 
 def make_actual_packing_list(boxes, messrs, destination, date_str):
