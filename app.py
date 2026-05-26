@@ -124,32 +124,116 @@ def make_packing_list(boxes, destination):
     buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
 
 def make_invoice(df, messrs, destination, date_str):
-    wb = Workbook(); ws = wb.active; ws.title = 'Invoice'
-    for col, width in [('A',5),('B',10),('C',45),('D',12),('E',50),('F',12),('G',12)]:
-        ws.column_dimensions[col].width = width
+    """
+    업로드된 Invoice_20260526.xlsx 구조를 따르는 인보이스 생성
+    - 셀 병합: C1:D1, E1:G1, C2:D2, E2:G2 (헤더 행)
+    - 컬럼 너비: A=5, B=10, C=45, D=12, E=50, F=12
+    - 데이터 행의 셀 병합: C:D, E:G (각 행)
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Invoice'
     
-    # 헤더행 (1행)
-    headers = ['NO.','HS CODE','Description of goods','QTY','Fabric ratio','Unit Price(KRW)','Amount(KRW)']
-    for i, h in enumerate(headers, 1): 
-        sc(ws, 1, i, h, bold=True, fill=col_fill, align=center, border=tb())
+    # 컬럼 너비 설정
+    ws.column_dimensions['A'].width = 5
+    ws.column_dimensions['B'].width = 10
+    ws.column_dimensions['C'].width = 45
+    ws.column_dimensions['D'].width = 12
+    ws.column_dimensions['E'].width = 50
+    ws.column_dimensions['F'].width = 12
+    ws.column_dimensions['G'].width = 12
     
-    # 데이터 행 (2행부터)
-    grouped = df.groupby(['품목명','HS Code','Material','단가(KRW)']).agg({'수량':'sum'}).reset_index()
-    cur_row = 2; total_qty = 0; total_amount = 0
+    # 스타일 정의
+    thin = Side(style='thin')
+    border_all = Border(left=thin, right=thin, top=thin, bottom=thin)
+    border_right_only = Border(right=thin)
+    
+    font_bold_9 = Font(name='Arial', bold=True, size=9)
+    font_normal_8 = Font(name='Arial', size=8)
+    
+    align_left_center = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    
+    # ─────────────────────────────────
+    # 1행: 헤더 (셀 병합 포함)
+    # ─────────────────────────────────
+    headers = ['NO.', 'HS CODE', 'Description of goods', 'QTY', 'Fabric ratio', 'Unit Price(KRW)', 'Amount(KRW)']
+    
+    for col_idx, header_text in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header_text)
+        cell.font = font_bold_9
+        cell.alignment = align_center if col_idx == 1 else align_left_center
+        cell.border = border_all
+    
+    # 1행 셀 병합 (원본 파일 구조 복제)
+    ws.merge_cells('C1:D1')  # Description of goods
+    ws.merge_cells('E1:G1')  # Fabric ratio (E1:G1로 병합)
+    
+    # ─────────────────────────────────
+    # 데이터 행 (2행부터) - 각 행마다 셀 병합
+    # ─────────────────────────────────
+    grouped = df.groupby(['품목명', 'HS Code', 'Material', '단가(KRW)']).agg({'수량': 'sum'}).reset_index()
+    
+    cur_row = 2
+    total_qty = 0
+    total_amount = 0
+    
     for idx, (_, row) in enumerate(grouped.iterrows(), 1):
-        sc(ws, cur_row, 1, idx, align=center, border=tb()); sc(ws, cur_row, 2, row['HS Code'], align=center, border=tb())
-        sc(ws, cur_row, 3, row['품목명'], align=left_a, border=tb()); sc(ws, cur_row, 4, row['수량'], align=center, border=tb())
-        sc(ws, cur_row, 5, row['Material'], align=left_a, border=tb()); sc(ws, cur_row, 6, row['단가(KRW)'], align=center, border=tb())
-        amount = row['수량'] * row['단가(KRW)']; sc(ws, cur_row, 7, amount, align=center, border=tb())
-        total_qty += row['수량']; total_amount += amount; cur_row += 1
+        # A: NO.
+        cell_a = ws.cell(row=cur_row, column=1, value=idx)
+        cell_a.font = font_bold_9
+        cell_a.alignment = align_center
+        cell_a.border = border_all
+        
+        # B: HS CODE
+        cell_b = ws.cell(row=cur_row, column=2, value=row['HS Code'])
+        cell_b.font = font_bold_9
+        cell_b.alignment = align_center
+        cell_b.border = border_all
+        
+        # C-D: Description of goods (병합)
+        cell_c = ws.cell(row=cur_row, column=3, value=row['품목명'])
+        cell_c.font = font_normal_8
+        cell_c.alignment = align_left_center
+        cell_c.border = border_all
+        
+        cell_d = ws.cell(row=cur_row, column=4)
+        cell_d.border = border_right_only
+        
+        ws.merge_cells(f'C{cur_row}:D{cur_row}')
+        
+        # E-G: Fabric ratio (병합)
+        cell_e = ws.cell(row=cur_row, column=5, value=row['Material'])
+        cell_e.font = font_normal_8
+        cell_e.alignment = align_left_center
+        cell_e.border = border_all
+        
+        cell_f = ws.cell(row=cur_row, column=6)
+        cell_f.border = border_right_only
+        
+        cell_g = ws.cell(row=cur_row, column=7)
+        cell_g.border = border_right_only
+        
+        ws.merge_cells(f'E{cur_row}:G{cur_row}')
+        
+        total_qty += row['수량']
+        total_amount += row['수량'] * row['단가(KRW)']
+        cur_row += 1
     
-    # 합계행
-    cur_row += 1; ws.merge_cells(f'A{cur_row}:C{cur_row}')
-    sc(ws, cur_row, 1, 'TOTAL', bold=True, align=center, fill=col_fill, border=tb())
-    sc(ws, cur_row, 4, total_qty, bold=True, align=center, fill=col_fill, border=tb())
-    sc(ws, cur_row, 7, total_amount, bold=True, align=center, fill=col_fill, border=tb())
+    # ─────────────────────────────────
+    # 합계행 (선택사항 - 필요시)
+    # ─────────────────────────────────
+    # cur_row += 1
+    # cell_total = ws.cell(row=cur_row, column=1, value='TOTAL')
+    # cell_total.font = font_bold_9
+    # cell_total.alignment = align_center
+    # cell_total.border = border_all
+    # ws.merge_cells(f'A{cur_row}:B{cur_row}')
     
-    buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
 
 def make_actual_packing_list(boxes, messrs, destination, date_str):
     wb = Workbook(); ws = wb.active; ws.title = 'ACTUAL PACKING LIST'
