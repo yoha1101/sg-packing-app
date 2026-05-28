@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 from collections import OrderedDict, defaultdict
 import io
 import re
@@ -124,16 +125,10 @@ def make_packing_list(boxes, destination):
     buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
 
 def make_invoice(df, messrs, destination, date_str):
-    """
-    업로드된 Invoice_20260526.xlsx 구조를 따르는 인보이스 생성
-    - 셀 병합: C1:D1, E1:G1 (헤더 행)
-    - 컬럼 순서: A(NO.) | B(HS CODE) | C-D(Description) | E-G(Fabric ratio) | H(QTY) | I(Unit Price) | J(Amount)
-    """
     wb = Workbook()
     ws = wb.active
     ws.title = 'Invoice'
     
-    # 컬럼 너비 설정
     ws.column_dimensions['A'].width = 5
     ws.column_dimensions['B'].width = 10
     ws.column_dimensions['C'].width = 45
@@ -145,7 +140,6 @@ def make_invoice(df, messrs, destination, date_str):
     ws.column_dimensions['I'].width = 12
     ws.column_dimensions['J'].width = 12
     
-    # 스타일 정의
     thin = Side(style='thin')
     border_all = Border(left=thin, right=thin, top=thin, bottom=thin)
     border_right_only = Border(right=thin)
@@ -157,25 +151,16 @@ def make_invoice(df, messrs, destination, date_str):
     align_center_wrap = Alignment(horizontal='center', vertical='center', wrap_text=True)
     align_right_wrap = Alignment(horizontal='right', vertical='center', wrap_text=True)
     
-    # ─────────────────────────────────
-    # 1행: 헤더 (셀 병합 포함)
-    # ─────────────────────────────────
-    headers = ['NO.', 'HS CODE', 'Description of goods', 'QTY', 'Fabric ratio', 'Unit Price(KRW)', 'Amount(KRW)']
-    header_cols = [1, 2, 3, 8, 5, 9, 10]  # A, B, C, H, E, I, J
-    
-    # A: NO.
     cell = ws.cell(row=1, column=1, value='NO.')
     cell.font = font_bold_aptos_9
     cell.alignment = align_center_wrap
     cell.border = border_all
     
-    # B: HS CODE
     cell = ws.cell(row=1, column=2, value='HS CODE')
     cell.font = font_bold_aptos_9
     cell.alignment = align_center_wrap
     cell.border = border_all
     
-    # C-D: Description of goods (병합)
     cell = ws.cell(row=1, column=3, value='Description of goods')
     cell.font = font_normal_aptos_8
     cell.alignment = align_left_wrap
@@ -185,7 +170,6 @@ def make_invoice(df, messrs, destination, date_str):
     cell.border = border_right_only
     ws.merge_cells('C1:D1')
     
-    # E-G: Fabric ratio (병합)
     cell = ws.cell(row=1, column=5, value='Fabric ratio')
     cell.font = font_normal_aptos_8
     cell.alignment = align_left_wrap
@@ -198,27 +182,21 @@ def make_invoice(df, messrs, destination, date_str):
     cell.border = border_right_only
     ws.merge_cells('E1:G1')
     
-    # H: QTY
     cell = ws.cell(row=1, column=8, value='QTY')
     cell.font = font_normal_aptos_8
     cell.alignment = align_right_wrap
     cell.border = border_all
     
-    # I: Unit Price(KRW)
     cell = ws.cell(row=1, column=9, value='Unit Price(KRW)')
     cell.font = font_normal_aptos_8
     cell.alignment = align_right_wrap
     cell.border = border_all
     
-    # J: Amount(KRW)
     cell = ws.cell(row=1, column=10, value='Amount(KRW)')
     cell.font = font_normal_aptos_8
     cell.alignment = align_right_wrap
     cell.border = border_all
     
-    # ─────────────────────────────────
-    # 데이터 행 (2행부터)
-    # ─────────────────────────────────
     grouped = df.groupby(['품목명', 'HS Code', 'Material', '단가(KRW)']).agg({'수량': 'sum'}).reset_index()
     
     cur_row = 2
@@ -230,19 +208,16 @@ def make_invoice(df, messrs, destination, date_str):
         unit_price = int(row['단가(KRW)'])
         amount = qty * unit_price
         
-        # A: NO.
         cell_a = ws.cell(row=cur_row, column=1, value=idx)
         cell_a.font = font_bold_aptos_9
         cell_a.alignment = align_left_wrap
         cell_a.border = border_all
         
-        # B: HS CODE
         cell_b = ws.cell(row=cur_row, column=2, value=row['HS Code'])
         cell_b.font = font_bold_aptos_9
         cell_b.alignment = align_left_wrap
         cell_b.border = border_all
         
-        # C-D: Description of goods (병합)
         cell_c = ws.cell(row=cur_row, column=3, value=row['품목명'])
         cell_c.font = font_normal_aptos_8
         cell_c.alignment = align_left_wrap
@@ -253,7 +228,6 @@ def make_invoice(df, messrs, destination, date_str):
         
         ws.merge_cells(f'C{cur_row}:D{cur_row}')
         
-        # E-G: Fabric ratio (병합)
         cell_e = ws.cell(row=cur_row, column=5, value=row['Material'])
         cell_e.font = font_normal_aptos_8
         cell_e.alignment = align_left_wrap
@@ -267,19 +241,16 @@ def make_invoice(df, messrs, destination, date_str):
         
         ws.merge_cells(f'E{cur_row}:G{cur_row}')
         
-        # H: QTY
         cell_h = ws.cell(row=cur_row, column=8, value=qty)
         cell_h.font = font_normal_aptos_8
         cell_h.alignment = align_right_wrap
         cell_h.border = border_all
         
-        # I: Unit Price(KRW)
         cell_i = ws.cell(row=cur_row, column=9, value=unit_price)
         cell_i.font = font_normal_aptos_8
         cell_i.alignment = align_right_wrap
         cell_i.border = border_all
         
-        # J: Amount(KRW)
         cell_j = ws.cell(row=cur_row, column=10, value=amount)
         cell_j.font = font_normal_aptos_8
         cell_j.alignment = align_right_wrap
@@ -827,7 +798,6 @@ HW_MERGE_END   = 7
 def _normalize_color(s):
     return re.sub(r'[\s\-/]', '', str(s).lower().strip())
 
-# ── 베이스코드 추출 (사이즈 suffix 제거)
 def _get_base(sku):
     for sz in ['3XL', '2XL', 'XL', 'FREE', 'XS', 'S', 'M', 'L']:
         if str(sku).upper().endswith(sz):
@@ -839,7 +809,6 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
     from openpyxl.cell.cell import MergedCell as _MergedCell
     from openpyxl.utils import get_column_letter
 
-    # ── 재고 로드
     stock = pd.read_excel(stock_file)
     stock['컬러']       = stock['상품명'].apply(_extr_color)
     stock['제품그룹']   = stock['상품명'].apply(_extr_base)
@@ -847,7 +816,6 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
     stock['현재고']     = stock['[매장] 오프라인_911스포츠'].fillna(0).astype(int)
     stock['영문품목명'] = stock['제품그룹'].map(KR_TO_EN_911)
 
-    # ── 본사 재고 lookup: (베이스코드, 사이즈) → 수량
     hq_lookup = {}
     if hq_csv_file is not None:
         df_hq = pd.read_csv(hq_csv_file, encoding='utf-8-sig')
@@ -855,7 +823,6 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
         for _, r in df_hq.iterrows():
             hq_lookup[(_get_base(r['SKU']), str(r['Size']).strip().upper())] = r['현재고']
 
-    # ── 출고수량 계산
     def calc_shipout(row):
         q911 = row['현재고']
         sz   = str(row['사이즈']).strip().upper()
@@ -867,11 +834,10 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
             available = max(0, hq_lookup.get((base, sz), 0) - hq_min)
             return min(needed, available)
         else:
-            return needed  # 본사 재고 파일 없으면 기존 방식 (부족분 그대로)
+            return needed
 
     stock['출고수량'] = stock.apply(calc_shipout, axis=1)
 
-    # lookup 테이블 구성
     qty_lookup   = {}
     price_lookup = {}
     for _, row in stock.iterrows():
@@ -886,15 +852,13 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
     if template_file is None:
         return io.BytesIO(), stock
 
-    # ── 템플릿 파싱
     tpl_bytes = template_file.read() if hasattr(template_file, 'read') else open(template_file, 'rb').read()
     wb_tpl = load_workbook(io.BytesIO(tpl_bytes))
     ws_tpl = wb_tpl.active
 
-    # B열 기준 블록 파싱 (11차 양식: B열에 PRODUCT NAME)
     b_rows = []
     for row in ws_tpl.iter_rows(min_row=3, max_row=ws_tpl.max_row, values_only=False):
-        b = row[1]  # B열
+        b = row[1]
         if b.value and str(b.value).strip():
             b_rows.append(b.row)
 
@@ -904,7 +868,7 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
         prod_name = str(ws_tpl.cell(start_row, 2).value).strip()
         colors_in_tpl = []
         for r in range(start_row, end_row+1):
-            d = ws_tpl.cell(r, 4).value  # D열: COLOR
+            d = ws_tpl.cell(r, 4).value
             if d and str(d).strip():
                 colors_in_tpl.append(str(d).strip())
         tpl_blocks.append({
@@ -913,7 +877,6 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
             'colors_tpl': colors_in_tpl,
         })
 
-    # ── 새 워크북 (템플릿 스타일 보존)
     wb_new = load_workbook(io.BytesIO(tpl_bytes))
     wb_out = Workbook()
     ws_out = wb_out.active
@@ -933,7 +896,6 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
         dst_cell.border    = copy(src_cell.border)
         dst_cell.number_format = src_cell.number_format
 
-    # 1~2행 헤더 복사
     for r in [1, 2]:
         ws_out.row_dimensions[r].height = ws_src.row_dimensions[r].height or 15
         for c in range(1, 16):
@@ -984,11 +946,8 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
                 dst_cell = ws_out.cell(cur_row, col)
                 copy_cell_style(src_cell, dst_cell)
 
-            # B열: 품목명 (첫 컬러만)
             ws_out.cell(cur_row, 2).value = prod if ci == 0 else None
-            # C열: STYLE NO. (베이스코드 — 첫 컬러만, 참조행에서 복사)
             ws_out.cell(cur_row, 3).value = ws_src.cell(ref_row, 3).value if ci == 0 else None
-            # D열: COLOR
             ws_out.cell(cur_row, 4).value = color
 
             is_free_prod = qty_lookup.get((prod, nc, 'FREE'), -1) >= 0
@@ -1003,38 +962,31 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
                 copy_cell_style(ws_src.cell(src_r, HW_MERGE_START), mc)
                 mc.alignment = Alignment(horizontal='center', vertical='center')
             else:
-                # E=5:S, F=6:M, G=7:L, H=8:XL, I=9:2XL, J=10:3XL
                 size_col_map_out = {'S':5,'M':6,'L':7,'XL':8,'2XL':9,'3XL':10}
                 for sz, col in size_col_map_out.items():
                     qty = qty_lookup.get((prod, nc, sz), 0)
                     ws_out.cell(cur_row, col).value = qty if qty > 0 else 0
 
-            # K열: C/T 수식
             ws_out.cell(cur_row, 11).value = f'=SUM(E{cur_row}:J{cur_row})'
             copy_cell_style(ws_src.cell(src_r, 11), ws_out.cell(cur_row, 11))
 
-            # L열: S/T (첫 컬러만, 나중에 병합)
             ws_out.cell(cur_row, 12).value = None
             copy_cell_style(ws_src.cell(src_r, 12), ws_out.cell(cur_row, 12))
 
-            # M열: KOR PRICE (첫 컬러만)
             if price and ci == 0:
                 ws_out.cell(cur_row, 13).value = price
                 copy_cell_style(ws_src.cell(ref_row, 13), ws_out.cell(cur_row, 13))
 
-            # N열: SUPPLY 70% (첫 컬러만)
             if ci == 0:
                 ws_out.cell(cur_row, 14).value = f'=SUM(M{cur_row}*0.7)'
                 copy_cell_style(ws_src.cell(ref_row, 14), ws_out.cell(cur_row, 14))
 
-            # O열: SUPPLY TOT (첫 컬러만)
             if ci == 0:
                 ws_out.cell(cur_row, 15).value = f'=SUM(L{cur_row}*N{cur_row})'
                 copy_cell_style(ws_src.cell(ref_row, 15), ws_out.cell(cur_row, 15))
 
             cur_row += 1
 
-        # B열 품목명 병합
         if n_colors > 1:
             ws_out.merge_cells(start_row=prod_first_row, start_column=2,
                                end_row=cur_row-1,        end_column=2)
@@ -1042,7 +994,6 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
             ws_out.merge_cells(start_row=prod_first_row, start_column=3,
                                end_row=cur_row-1,        end_column=3)
 
-        # L열 S/T 병합 + 수식
         j_formula = f'=SUM(K{prod_first_row}:K{cur_row-1})'
         if n_colors > 1:
             ws_out.merge_cells(start_row=prod_first_row, start_column=12,
@@ -1051,7 +1002,6 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
         copy_cell_style(ws_src.cell(ref_row, 12), ws_out.cell(prod_first_row, 12))
         ws_out.cell(prod_first_row, 12).alignment = Alignment(horizontal='center', vertical='center')
 
-        # M/N/O 열 병합 (컬러 2개 이상, 가격 동일할 때)
         if n_colors > 1:
             first_nc = _normalize_color(colors_out[0])
             all_same_price = all(
@@ -1064,7 +1014,6 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
                                        end_row=cur_row-1,        end_column=kcol)
                     ws_out.cell(prod_first_row, kcol).alignment = Alignment(horizontal='center', vertical='center')
 
-    # 합계 행
     total_row = cur_row + 1
     ws_out.cell(total_row-1, 11).value = 'Quantity'
     ws_out.cell(total_row-1, 13).value = 'Total supply price(KRW)'
@@ -1076,6 +1025,214 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
     wb_out.save(buf)
     buf.seek(0)
     return buf, stock
+
+
+# ════════════════════════════════════════════════════════
+# TAB 4: 💱 국가별 가격 생성기
+# ════════════════════════════════════════════════════════
+
+def make_country_pricing_sheet(product_file, country_list, exchange_rates):
+    """프로덕트 시트에서 기본가격을 읽고 국가별 가격 시트 생성 (통합본)"""
+    from openpyxl import Workbook, load_workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    import io
+    
+    prod_bytes = product_file.read() if hasattr(product_file, 'read') else open(product_file, 'rb').read()
+    wb_prod = load_workbook(io.BytesIO(prod_bytes), data_only=True)
+    ws_prod = wb_prod.active
+    
+    products = []
+    for row in range(4, ws_prod.max_row + 1):
+        cat = ws_prod.cell(row, 1).value
+        prod_name = ws_prod.cell(row, 2).value
+        style_no = ws_prod.cell(row, 3).value
+        color = ws_prod.cell(row, 4).value
+        price_krw = ws_prod.cell(row, 13).value
+        
+        if prod_name and style_no and price_krw:
+            try:
+                price_krw = float(price_krw)
+                products.append({
+                    'category': cat,
+                    'product_name': prod_name,
+                    'style_no': style_no,
+                    'color': color,
+                    'price_krw': price_krw,
+                })
+            except:
+                pass
+    
+    wb_out = Workbook()
+    ws_out = wb_out.active
+    ws_out.title = 'Country Pricing'
+    
+    thin = Side(style='thin')
+    border_all = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    left_align = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    
+    headers = ['Category', 'Product Name', 'Style No.', 'Color', 'Base Price (KRW)']
+    headers += [f"{c['code']} ({c['symbol']})" for c in country_list]
+    
+    for col, header in enumerate(headers, 1):
+        cell = ws_out.cell(row=1, column=col, value=header)
+        cell.font = Font(name='Arial', bold=True, size=10, color='FFFFFF')
+        cell.fill = PatternFill('solid', fgColor='006FC0')
+        cell.alignment = center_align
+        cell.border = border_all
+    
+    ws_out.column_dimensions['A'].width = 15
+    ws_out.column_dimensions['B'].width = 40
+    ws_out.column_dimensions['C'].width = 16
+    ws_out.column_dimensions['D'].width = 20
+    ws_out.column_dimensions['E'].width = 18
+    
+    for col in range(6, 6 + len(country_list)):
+        ws_out.column_dimensions[get_column_letter(col)].width = 16
+    
+    for row_idx, prod in enumerate(products, 2):
+        cell = ws_out.cell(row=row_idx, column=1, value=prod['category'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = left_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=2, value=prod['product_name'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = left_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=3, value=prod['style_no'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = center_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=4, value=prod['color'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = left_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=5, value=int(prod['price_krw']))
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = center_align
+        cell.border = border_all
+        cell.number_format = '#,##0'
+        
+        for col_idx, country in enumerate(country_list, 6):
+            code = country['code']
+            adjustment = country['adjustment']
+            exchange = exchange_rates.get(code, 1.0)
+            
+            price_local = (prod['price_krw'] / exchange) * (1 + adjustment)
+            
+            cell = ws_out.cell(row=row_idx, column=col_idx, value=price_local)
+            cell.font = Font(name='Arial', size=9)
+            cell.alignment = center_align
+            cell.border = border_all
+            cell.number_format = '#,##0.00'
+    
+    buf = io.BytesIO()
+    wb_out.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def make_single_country_sheet(product_file, country, exchange_rate):
+    """단일 국가별 가격 시트 생성 (개별 다운로드용)"""
+    from openpyxl import Workbook, load_workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    import io
+    
+    prod_bytes = product_file.read() if hasattr(product_file, 'read') else open(product_file, 'rb').read()
+    wb_prod = load_workbook(io.BytesIO(prod_bytes), data_only=True)
+    ws_prod = wb_prod.active
+    
+    products = []
+    for row in range(4, ws_prod.max_row + 1):
+        cat = ws_prod.cell(row, 1).value
+        prod_name = ws_prod.cell(row, 2).value
+        style_no = ws_prod.cell(row, 3).value
+        color = ws_prod.cell(row, 4).value
+        price_krw = ws_prod.cell(row, 13).value
+        
+        if prod_name and style_no and price_krw:
+            try:
+                price_krw = float(price_krw)
+                products.append({
+                    'category': cat,
+                    'product_name': prod_name,
+                    'style_no': style_no,
+                    'color': color,
+                    'price_krw': price_krw,
+                })
+            except:
+                pass
+    
+    wb_out = Workbook()
+    ws_out = wb_out.active
+    ws_out.title = country['code']
+    
+    thin = Side(style='thin')
+    border_all = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    left_align = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    
+    headers = ['Category', 'Product Name', 'Style No.', 'Color', 'Base Price (KRW)', f"{country['code']} ({country['symbol']})"]
+    
+    for col, header in enumerate(headers, 1):
+        cell = ws_out.cell(row=1, column=col, value=header)
+        cell.font = Font(name='Arial', bold=True, size=11, color='FFFFFF')
+        cell.fill = PatternFill('solid', fgColor='006FC0')
+        cell.alignment = center_align
+        cell.border = border_all
+    
+    ws_out.column_dimensions['A'].width = 15
+    ws_out.column_dimensions['B'].width = 40
+    ws_out.column_dimensions['C'].width = 16
+    ws_out.column_dimensions['D'].width = 20
+    ws_out.column_dimensions['E'].width = 18
+    ws_out.column_dimensions['F'].width = 18
+    
+    for row_idx, prod in enumerate(products, 2):
+        cell = ws_out.cell(row=row_idx, column=1, value=prod['category'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = left_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=2, value=prod['product_name'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = left_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=3, value=prod['style_no'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = center_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=4, value=prod['color'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = left_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=5, value=int(prod['price_krw']))
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = center_align
+        cell.border = border_all
+        cell.number_format = '#,##0'
+        
+        adjustment = country['adjustment']
+        price_local = (prod['price_krw'] / exchange_rate) * (1 + adjustment)
+        
+        cell = ws_out.cell(row=row_idx, column=6, value=price_local)
+        cell.font = Font(name='Arial', size=9, bold=True, color='006FC0')
+        cell.alignment = center_align
+        cell.border = border_all
+        cell.number_format = '#,##0.00'
+    
+    buf = io.BytesIO()
+    wb_out.save(buf)
+    buf.seek(0)
+    return buf
 
 
 # ════════════════════════════════════════════════════════
@@ -1275,140 +1432,8 @@ with tab3:
         st.warning("② 매장 재고현황 파일도 업로드해주세요.")
     else:
         st.info("👆 입고 양식과 매장 재고현황 파일을 모두 업로드해주세요.")
-# ════════════════════════════════════════════════════════
-# TAB 4: 💱 국가별 가격 생성기
-# ════════════════════════════════════════════════════════
 
-def make_country_pricing_sheet(product_file, country_list, exchange_rates):
-    """
-    프로덕트 시트에서 기본가격을 읽고 국가별 가격 시트 생성
-    
-    Args:
-        product_file: 프로덕트 시트 Excel 파일
-        country_list: 국가 정보 리스트 [{'code':'USD', 'name':'United States', ...}]
-        exchange_rates: {'USD': 1.0, 'EUR': 1.1, ...} 형태의 환율 딕셔너리
-    """
-    from openpyxl import Workbook, load_workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.utils import get_column_letter
-    import io
-    
-    # 프로덕트 시트 로드
-    prod_bytes = product_file.read() if hasattr(product_file, 'read') else open(product_file, 'rb').read()
-    wb_prod = load_workbook(io.BytesIO(prod_bytes), data_only=True)
-    ws_prod = wb_prod.active
-    
-    # 데이터 추출
-    products = []
-    for row in range(4, ws_prod.max_row + 1):
-        cat = ws_prod.cell(row, 1).value
-        prod_name = ws_prod.cell(row, 2).value
-        style_no = ws_prod.cell(row, 3).value
-        color = ws_prod.cell(row, 4).value
-        
-        # KRW 가격 (컬럼 13)
-        price_krw = ws_prod.cell(row, 13).value
-        
-        if prod_name and style_no and price_krw:
-            try:
-                price_krw = float(price_krw)
-                products.append({
-                    'category': cat,
-                    'product_name': prod_name,
-                    'style_no': style_no,
-                    'color': color,
-                    'price_krw': price_krw,
-                })
-            except:
-                pass
-    
-    # 새 워크북 생성
-    wb_out = Workbook()
-    ws_out = wb_out.active
-    ws_out.title = 'Country Pricing'
-    
-    # 스타일 정의
-    thin = Side(style='thin')
-    border_all = Border(left=thin, right=thin, top=thin, bottom=thin)
-    center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    left_align = Alignment(horizontal='left', vertical='center', wrap_text=True)
-    
-    # 헤더 설정
-    headers = ['Category', 'Product Name', 'Style No.', 'Color', 'Base Price (KRW)']
-    headers += [f"{c['code']} ({c['symbol']})" for c in country_list]
-    
-    for col, header in enumerate(headers, 1):
-        cell = ws_out.cell(row=1, column=col, value=header)
-        cell.font = Font(name='Arial', bold=True, size=10, color='FFFFFF')
-        cell.fill = PatternFill('solid', fgColor='006FC0')
-        cell.alignment = center_align
-        cell.border = border_all
-    
-    # 컬럼 너비
-    ws_out.column_dimensions['A'].width = 15
-    ws_out.column_dimensions['B'].width = 40
-    ws_out.column_dimensions['C'].width = 16
-    ws_out.column_dimensions['D'].width = 20
-    ws_out.column_dimensions['E'].width = 18
-    
-    for col in range(6, 6 + len(country_list)):
-        ws_out.column_dimensions[get_column_letter(col)].width = 16
-    
-    # 데이터 입력
-    for row_idx, prod in enumerate(products, 2):
-        # Category
-        cell = ws_out.cell(row=row_idx, column=1, value=prod['category'])
-        cell.font = Font(name='Arial', size=9)
-        cell.alignment = left_align
-        cell.border = border_all
-        
-        # Product Name
-        cell = ws_out.cell(row=row_idx, column=2, value=prod['product_name'])
-        cell.font = Font(name='Arial', size=9)
-        cell.alignment = left_align
-        cell.border = border_all
-        
-        # Style No.
-        cell = ws_out.cell(row=row_idx, column=3, value=prod['style_no'])
-        cell.font = Font(name='Arial', size=9)
-        cell.alignment = center_align
-        cell.border = border_all
-        
-        # Color
-        cell = ws_out.cell(row=row_idx, column=4, value=prod['color'])
-        cell.font = Font(name='Arial', size=9)
-        cell.alignment = left_align
-        cell.border = border_all
-        
-        # Base Price (KRW)
-        cell = ws_out.cell(row=row_idx, column=5, value=int(prod['price_krw']))
-        cell.font = Font(name='Arial', size=9)
-        cell.alignment = center_align
-        cell.border = border_all
-        cell.number_format = '#,##0'
-        
-        # 국가별 가격 계산
-        for col_idx, country in enumerate(country_list, 6):
-            code = country['code']
-            adjustment = country['adjustment']
-            exchange = exchange_rates.get(code, 1.0)
-            
-            # 가격 = KRW 기본가 / 환율 * (1 + 조정%)
-            price_local = (prod['price_krw'] / exchange) * (1 + adjustment)
-            
-            cell = ws_out.cell(row=row_idx, column=col_idx, value=price_local)
-            cell.font = Font(name='Arial', size=9)
-            cell.alignment = center_align
-            cell.border = border_all
-            cell.number_format = '#,##0.00'
-    
-    buf = io.BytesIO()
-    wb_out.save(buf)
-    buf.seek(0)
-    return buf
-
-
-# ── TAB 4: 국가별 가격 생성기
+# ── TAB 4: 💱 국가별 가격 생성기
 with tab4:
     st.caption("🌍 프로덕트 시트 + 환율 + 조정비율 → 국가별 가격 시트 자동 생성")
     st.divider()
@@ -1426,69 +1451,61 @@ with tab4:
     
     with col2:
         st.subheader("⚙️ 기본 설정")
-        selected_countries = st.multiselect(
+        
+        country_options = {
+            'USD ($) - 미국': 'USD',
+            'EUR (€) - 유로': 'EUR',
+            'GBP (£) - 영국': 'GBP',
+            'JPY (¥) - 일본': 'JPY',
+            'CNY (¥) - 중국': 'CNY',
+            'AED (د.إ) - UAE': 'AED',
+            'CAD (C$) - 캐나다': 'CAD',
+            'AUD (A$) - 호주': 'AUD',
+            'NZD (NZ$) - 뉴질랜드': 'NZD',
+            'CHF - 스위스': 'CHF',
+            'SEK (kr) - 스웨덴': 'SEK',
+            'NOK (kr) - 노르웨이': 'NOK',
+            'DKK (kr) - 덴마크': 'DKK',
+            'HUF (Ft) - 헝가리': 'HUF',
+            'PLN (zł) - 폴란드': 'PLN',
+            'CZK (Kč) - 체코': 'CZK',
+        }
+        
+        selected_display = st.multiselect(
             "국가 선택",
-            ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'AED', 'CAD', 'AUD', 'NZD', 'CHF', 'SEK', 'NOK', 'DKK', 'HUF', 'PLN', 'CZK'],
-            default=['USD', 'EUR', 'GBP', 'JPY'],
+            list(country_options.keys()),
+            default=['USD ($) - 미국', 'EUR (€) - 유로', 'GBP (£) - 영국', 'JPY (¥) - 일본'],
             key="select_countries"
         )
+        
+        selected_countries = [country_options[display] for display in selected_display]
     
     st.divider()
     
     if pricing_product_file:
         st.subheader("🌐 환율 및 조정비율 입력")
         
-        # 기본 환율 (KRW 기준)
         default_rates = {
-            'USD': 1250,
-            'EUR': 1350,
-            'GBP': 1580,
-            'JPY': 8.3,
-            'CNY': 172,
-            'AED': 340,
-            'CAD': 920,
-            'AUD': 810,
-            'NZD': 780,
-            'CHF': 1400,
-            'SEK': 115,
-            'NOK': 118,
-            'DKK': 181,
-            'HUF': 3.3,
-            'PLN': 310,
-            'CZK': 54,
+            'USD': 1250, 'EUR': 1350, 'GBP': 1580, 'JPY': 8.3, 'CNY': 172,
+            'AED': 340, 'CAD': 920, 'AUD': 810, 'NZD': 780, 'CHF': 1400,
+            'SEK': 115, 'NOK': 118, 'DKK': 181, 'HUF': 3.3, 'PLN': 310, 'CZK': 54,
         }
         
-        # 기본 조정비율
         default_adjustments = {
-            'USD': 68.3,
-            'EUR': 0,
-            'GBP': 54.0,
-            'JPY': 39.7,
-            'CNY': 39.7,
-            'AED': 29.8,
-            'CAD': 39.7,
-            'AUD': 30.9,
-            'NZD': 38.6,
-            'CHF': 36.4,
-            'SEK': 60.6,
-            'NOK': 56.2,
-            'DKK': 60.6,
-            'HUF': 61.7,
-            'PLN': 57.3,
-            'CZK': 55.1,
+            'USD': 68.3, 'EUR': 0, 'GBP': 54.0, 'JPY': 39.7, 'CNY': 39.7,
+            'AED': 29.8, 'CAD': 39.7, 'AUD': 30.9, 'NZD': 38.6, 'CHF': 36.4,
+            'SEK': 60.6, 'NOK': 56.2, 'DKK': 60.6, 'HUF': 61.7, 'PLN': 57.3, 'CZK': 55.1,
         }
         
         currency_symbols = {
-            'USD': '$', 'EUR': '€', 'GBP': '£', 'JPY': '¥',
-            'CNY': '¥', 'AED': 'د.إ', 'CAD': 'C$', 'AUD': 'A$',
-            'NZD': 'NZ$', 'CHF': 'CHF', 'SEK': 'kr', 'NOK': 'kr',
-            'DKK': 'kr', 'HUF': 'Ft', 'PLN': 'zł', 'CZK': 'Kč'
+            'USD': '$', 'EUR': '€', 'GBP': '£', 'JPY': '¥', 'CNY': '¥',
+            'AED': 'د.إ', 'CAD': 'C$', 'AUD': 'A$', 'NZD': 'NZ$', 'CHF': 'CHF',
+            'SEK': 'kr', 'NOK': 'kr', 'DKK': 'kr', 'HUF': 'Ft', 'PLN': 'zł', 'CZK': 'Kč'
         }
         
         rates = {}
         adjustments = {}
         
-        # 선택된 국가만 입력폼 표시
         if selected_countries:
             cols = st.columns(len(selected_countries))
             
@@ -1498,7 +1515,7 @@ with tab4:
                     
                     rates[curr] = st.number_input(
                         f"{curr} 환율",
-                        value=default_rates.get(curr, 1.0),
+                        value=float(default_rates.get(curr, 1.0)),
                         step=1.0,
                         key=f"rate_{curr}",
                         label_visibility="collapsed",
@@ -1519,47 +1536,97 @@ with tab4:
         
         st.divider()
         
-        if st.button("🔄 국가별 가격 시트 생성", use_container_width=True, type="primary"):
-            if not selected_countries:
-                st.error("❌ 국가를 선택해주세요.")
-            else:
-                with st.spinner("국가별 가격 계산 중..."):
-                    try:
-                        # 국가 정보 구성
-                        country_data = []
-                        for code in selected_countries:
-                            country_data.append({
-                                'code': code,
-                                'name': code,
-                                'symbol': currency_symbols.get(code, code),
-                                'adjustment': adjustments.get(code, 0),
-                            })
-                        
-                        # 가격 시트 생성
-                        buf = make_country_pricing_sheet(
-                            pricing_product_file,
-                            country_data,
-                            rates
-                        )
-                        
-                        st.success("✅ 국가별 가격 시트 생성 완료!")
-                        
-                        date_str = datetime.now().strftime("%Y%m%d")
-                        st.download_button(
-                            "⬇️ 국가별 가격 시트 다운로드",
-                            data=buf,
-                            file_name=f"Country_Pricing_{date_str}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True,
-                            type="primary"
-                        )
-                        
-                    except Exception as e:
-                        st.error(f"❌ 오류: {e}")
-                        import traceback
-                        st.code(traceback.format_exc())
+        col_btn1, col_btn2 = st.columns([1, 1])
+        
+        with col_btn1:
+            if st.button("📊 통합 시트 생성 (모든 국가)", use_container_width=True, type="primary"):
+                if not selected_countries:
+                    st.error("❌ 국가를 선택해주세요.")
+                else:
+                    with st.spinner("국가별 가격 계산 중..."):
+                        try:
+                            country_data = []
+                            for code in selected_countries:
+                                country_data.append({
+                                    'code': code,
+                                    'name': code,
+                                    'symbol': currency_symbols.get(code, code),
+                                    'adjustment': adjustments.get(code, 0),
+                                })
+                            
+                            buf = make_country_pricing_sheet(
+                                pricing_product_file,
+                                country_data,
+                                rates
+                            )
+                            
+                            st.success("✅ 통합 시트 생성 완료!")
+                            
+                            date_str = datetime.now().strftime("%Y%m%d")
+                            st.download_button(
+                                "⬇️ 통합 시트 다운로드",
+                                data=buf,
+                                file_name=f"Country_Pricing_All_{date_str}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True,
+                                type="primary"
+                            )
+                            
+                        except Exception as e:
+                            st.error(f"❌ 오류: {e}")
+                            import traceback
+                            st.code(traceback.format_exc())
+        
+        with col_btn2:
+            if st.button("🌍 국가별 개별 시트 생성", use_container_width=True, type="secondary"):
+                if not selected_countries:
+                    st.error("❌ 국가를 선택해주세요.")
+                else:
+                    with st.spinner("국가별 시트 생성 중..."):
+                        try:
+                            date_str = datetime.now().strftime("%Y%m%d")
+                            
+                            individual_files = []
+                            for code in selected_countries:
+                                country_info = {
+                                    'code': code,
+                                    'symbol': currency_symbols.get(code, code),
+                                    'adjustment': adjustments.get(code, 0),
+                                }
+                                
+                                buf = make_single_country_sheet(
+                                    pricing_product_file,
+                                    country_info,
+                                    rates[code]
+                                )
+                                
+                                individual_files.append({
+                                    'code': code,
+                                    'buf': buf,
+                                    'filename': f"Pricing_{code}_{date_str}.xlsx"
+                                })
+                            
+                            st.success(f"✅ {len(individual_files)}개 국가 시트 생성 완료!")
+                            
+                            st.subheader("📥 국가별 다운로드")
+                            cols = st.columns(len(individual_files))
+                            
+                            for idx, file_info in enumerate(individual_files):
+                                with cols[idx]:
+                                    st.download_button(
+                                        f"⬇️ {file_info['code']}",
+                                        data=file_info['buf'],
+                                        file_name=file_info['filename'],
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        use_container_width=True
+                                    )
+                            
+                        except Exception as e:
+                            st.error(f"❌ 오류: {e}")
+                            import traceback
+                            st.code(traceback.format_exc())
     else:
         st.info("👆 프로덕트 시트 파일을 업로드해주세요.")
 
 st.divider()
-st.caption("💡 환율 및 조정비율은 필요에 따라 자유롭게 조정할 수 있습니다!")
+st.caption("💡 팁: 통합 시트는 모든 국가 가격을 한 파일에, 개별 시트는 국가별로 따로 생성합니다!")
