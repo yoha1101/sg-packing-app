@@ -1081,7 +1081,7 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
 # ════════════════════════════════════════════════════════
 # MAIN UI
 # ════════════════════════════════════════════════════════
-tab1, tab2, tab3 = st.tabs(["📦 패킹 문서 생성기", "🔄 시트 변환기", "🏪 911스포츠 입고 출고서"])
+tab1, tab2, tab3, tab4 = st.tabs(["📦 패킹 문서 생성기", "🔄 시트 변환기", "🏪 911스포츠 입고 출고서", "💱 국가별 가격 생성기"])
 
 # ── TAB 1
 with tab1:
