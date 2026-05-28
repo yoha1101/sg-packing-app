@@ -1834,6 +1834,423 @@ def make_single_country_sheet(product_file, country, exchange_rate):
     return buf
 
 
+# ════════════════════════════════════════════════════════
+# TAB 4: 💱 국가별 가격 생성기 (최종 버전)
+# ════════════════════════════════════════════════════════
+ 
+import requests
+from datetime import datetime, timedelta
+import json
+ 
+# 전체 국가 목록 (180개국+)
+COUNTRY_DATA = {
+    'AED': {'korean': '아랍에미리트', 'symbol': 'د.إ', 'region': '중동'},
+    'AFN': {'korean': '아프가니스탄', 'symbol': 'Af', 'region': '아시아'},
+    'ALL': {'korean': '알바니아', 'symbol': 'L', 'region': '유럽'},
+    'AMD': {'korean': '아르메니아', 'symbol': '֏', 'region': '아시아'},
+    'ANG': {'korean': '네덜란드령 앤틸레스', 'symbol': 'ƒ', 'region': '카리브'},
+    'AOA': {'korean': '앙골라', 'symbol': 'Kz', 'region': '아프리카'},
+    'ARS': {'korean': '아르헨티나', 'symbol': '$', 'region': '남미'},
+    'AUD': {'korean': '호주', 'symbol': 'A$', 'region': '오세아니아'},
+    'AWG': {'korean': '아루바', 'symbol': 'ƒ', 'region': '카리브'},
+    'AZN': {'korean': '아제르바이잔', 'symbol': '₼', 'region': '아시아'},
+    'BAM': {'korean': '보스니아', 'symbol': 'KM', 'region': '유럽'},
+    'BBD': {'korean': '바베이도스', 'symbol': '$', 'region': '카리브'},
+    'BDT': {'korean': '방글라데시', 'symbol': '৳', 'region': '아시아'},
+    'BGN': {'korean': '불가리아', 'symbol': 'лв', 'region': '유럽'},
+    'BHD': {'korean': '바레인', 'symbol': '.د.ب', 'region': '중동'},
+    'BIF': {'korean': '부룬디', 'symbol': 'FBu', 'region': '아프리카'},
+    'BMD': {'korean': '버뮤다', 'symbol': '$', 'region': '카리브'},
+    'BND': {'korean': '브루나이', 'symbol': '$', 'region': '아시아'},
+    'BOB': {'korean': '볼리비아', 'symbol': 'Bs.', 'region': '남미'},
+    'BRL': {'korean': '브라질', 'symbol': 'R$', 'region': '남미'},
+    'BSD': {'korean': '바하마', 'symbol': '$', 'region': '카리브'},
+    'BTC': {'korean': '비트코인', 'symbol': '฿', 'region': '암호화폐'},
+    'BTN': {'korean': '부탄', 'symbol': 'Nu.', 'region': '아시아'},
+    'BWP': {'korean': '보츠와나', 'symbol': 'P', 'region': '아프리카'},
+    'BYN': {'korean': '벨라루스', 'symbol': 'Br', 'region': '유럽'},
+    'BZD': {'korean': '벨리즈', 'symbol': '$', 'region': '중미'},
+    'CAD': {'korean': '캐나다', 'symbol': 'C$', 'region': '북미'},
+    'CDF': {'korean': '콩고', 'symbol': 'FC', 'region': '아프리카'},
+    'CHE': {'korean': '스위스 (ECU)', 'symbol': 'CHE', 'region': '유럽'},
+    'CHF': {'korean': '스위스', 'symbol': 'CHF', 'region': '유럽'},
+    'CHW': {'korean': '스위스 (WIR)', 'symbol': 'CHW', 'region': '유럽'},
+    'CLF': {'korean': '칠레 (UF)', 'symbol': 'UF', 'region': '남미'},
+    'CLP': {'korean': '칠레', 'symbol': '$', 'region': '남미'},
+    'CNY': {'korean': '중국', 'symbol': '¥', 'region': '아시아'},
+    'COP': {'korean': '콜롬비아', 'symbol': '$', 'region': '남미'},
+    'COU': {'korean': '콜롬비아 (UVR)', 'symbol': 'UVR', 'region': '남미'},
+    'CRC': {'korean': '코스타리카', 'symbol': '₡', 'region': '중미'},
+    'CUC': {'korean': '쿠바 (태환)', 'symbol': '$', 'region': '카리브'},
+    'CUP': {'korean': '쿠바', 'symbol': '₱', 'region': '카리브'},
+    'CVE': {'korean': '카보베르데', 'symbol': '$', 'region': '아프리카'},
+    'CZK': {'korean': '체코', 'symbol': 'Kč', 'region': '유럽'},
+    'DJF': {'korean': '지부티', 'symbol': 'Fdj', 'region': '아프리카'},
+    'DKK': {'korean': '덴마크', 'symbol': 'kr', 'region': '유럽'},
+    'DOP': {'korean': '도미니카공화국', 'symbol': '$', 'region': '카리브'},
+    'DZD': {'korean': '알제리', 'symbol': 'د.ج', 'region': '아프리카'},
+    'EGP': {'korean': '이집트', 'symbol': '£', 'region': '아프리카'},
+    'ERN': {'korean': '에리트레아', 'symbol': 'Nfk', 'region': '아프리카'},
+    'ETB': {'korean': '에티오피아', 'symbol': 'Br', 'region': '아프리카'},
+    'EUR': {'korean': '유로존', 'symbol': '€', 'region': '유럽'},
+    'FJD': {'korean': '피지', 'symbol': '$', 'region': '오세아니아'},
+    'FKP': {'korean': '포클랜드', 'symbol': '£', 'region': '남미'},
+    'GBP': {'korean': '영국', 'symbol': '£', 'region': '유럽'},
+    'GEL': {'korean': '조지아', 'symbol': '₾', 'region': '아시아'},
+    'GGP': {'korean': '건지', 'symbol': '£', 'region': '유럽'},
+    'GHS': {'korean': '가나', 'symbol': '₵', 'region': '아프리카'},
+    'GIP': {'korean': '지브롤터', 'symbol': '£', 'region': '유럽'},
+    'GMD': {'korean': '감비아', 'symbol': 'D', 'region': '아프리카'},
+    'GNF': {'korean': '기니', 'symbol': 'FG', 'region': '아프리카'},
+    'GTQ': {'korean': '과테말라', 'symbol': 'Q', 'region': '중미'},
+    'GYD': {'korean': '가이아나', 'symbol': '$', 'region': '남미'},
+    'HKD': {'korean': '홍콩', 'symbol': '$', 'region': '아시아'},
+    'HNL': {'korean': '온두라스', 'symbol': 'L', 'region': '중미'},
+    'HRK': {'korean': '크로아티아', 'symbol': 'kn', 'region': '유럽'},
+    'HTG': {'korean': '아이티', 'symbol': 'G', 'region': '카리브'},
+    'HUF': {'korean': '헝가리', 'symbol': 'Ft', 'region': '유럽'},
+    'IDR': {'korean': '인도네시아', 'symbol': 'Rp', 'region': '아시아'},
+    'ILS': {'korean': '이스라엘', 'symbol': '₪', 'region': '중동'},
+    'IMP': {'korean': '맨섬', 'symbol': '£', 'region': '유럽'},
+    'INR': {'korean': '인도', 'symbol': '₹', 'region': '아시아'},
+    'IQD': {'korean': '이라크', 'symbol': 'ع.د', 'region': '중동'},
+    'IRR': {'korean': '이란', 'symbol': '﷼', 'region': '중동'},
+    'ISK': {'korean': '아이슬란드', 'symbol': 'kr', 'region': '유럽'},
+    'JEP': {'korean': '저지', 'symbol': '£', 'region': '유럽'},
+    'JMD': {'korean': '자메이카', 'symbol': '$', 'region': '카리브'},
+    'JOD': {'korean': '요르단', 'symbol': 'د.ا', 'region': '중동'},
+    'JPY': {'korean': '일본', 'symbol': '¥', 'region': '아시아'},
+    'KES': {'korean': '케냐', 'symbol': 'Sh', 'region': '아프리카'},
+    'KGS': {'korean': '키르기스스탄', 'symbol': 'с', 'region': '아시아'},
+    'KHR': {'korean': '캄보디아', 'symbol': '៛', 'region': '아시아'},
+    'KMF': {'korean': '코모로', 'symbol': 'CF', 'region': '아프리카'},
+    'KPW': {'korean': '북한', 'symbol': '₩', 'region': '아시아'},
+    'KRW': {'korean': '대한민국', 'symbol': '₩', 'region': '아시아'},
+    'KWD': {'korean': '쿠웨이트', 'symbol': 'د.ك', 'region': '중동'},
+    'KYD': {'korean': '케이맨 제도', 'symbol': '$', 'region': '카리브'},
+    'KZT': {'korean': '카자흐스탄', 'symbol': '₸', 'region': '아시아'},
+    'LAK': {'korean': '라오스', 'symbol': '₭', 'region': '아시아'},
+    'LBP': {'korean': '레바논', 'symbol': '£', 'region': '중동'},
+    'LKR': {'korean': '스리랑카', 'symbol': 'Rs', 'region': '아시아'},
+    'LRD': {'korean': '라이베리아', 'symbol': '$', 'region': '아프리카'},
+    'LSL': {'korean': '레소토', 'symbol': 'L', 'region': '아프리카'},
+    'LYD': {'korean': '리비아', 'symbol': 'ل.د', 'region': '아프리카'},
+    'MAD': {'korean': '모로코', 'symbol': 'د.م.', 'region': '아프리카'},
+    'MDL': {'korean': '몰도바', 'symbol': 'L', 'region': '유럽'},
+    'MGA': {'korean': '마다가스카르', 'symbol': 'Ar', 'region': '아프리카'},
+    'MKD': {'korean': '북마케도니아', 'symbol': 'ден', 'region': '유럽'},
+    'MMK': {'korean': '미얀마', 'symbol': 'K', 'region': '아시아'},
+    'MNT': {'korean': '몽골', 'symbol': '₮', 'region': '아시아'},
+    'MOP': {'korean': '마카오', 'symbol': 'P', 'region': '아시아'},
+    'MRU': {'korean': '모리타니', 'symbol': 'UM', 'region': '아프리카'},
+    'MUR': {'korean': '모리셔스', 'symbol': '₨', 'region': '아프리카'},
+    'MVR': {'korean': '몰디브', 'symbol': '.ރ.', 'region': '아시아'},
+    'MWK': {'korean': '말라위', 'symbol': 'K', 'region': '아프리카'},
+    'MXN': {'korean': '멕시코', 'symbol': '$', 'region': '북미'},
+    'MYR': {'korean': '말레이시아', 'symbol': 'RM', 'region': '아시아'},
+    'MZN': {'korean': '모잠비크', 'symbol': 'MT', 'region': '아프리카'},
+    'NAD': {'korean': '나미비아', 'symbol': '$', 'region': '아프리카'},
+    'NGN': {'korean': '나이지리아', 'symbol': '₦', 'region': '아프리카'},
+    'NIO': {'korean': '니카라과', 'symbol': 'C$', 'region': '중미'},
+    'NOK': {'korean': '노르웨이', 'symbol': 'kr', 'region': '유럽'},
+    'NPR': {'korean': '네팔', 'symbol': '₨', 'region': '아시아'},
+    'NZD': {'korean': '뉴질랜드', 'symbol': 'NZ$', 'region': '오세아니아'},
+    'OMR': {'korean': '오만', 'symbol': 'ر.ع.', 'region': '중동'},
+    'PAB': {'korean': '파나마', 'symbol': 'B/.', 'region': '중미'},
+    'PEN': {'korean': '페루', 'symbol': 'S/', 'region': '남미'},
+    'PGK': {'korean': '파푸아뉴기니', 'symbol': 'K', 'region': '오세아니아'},
+    'PHP': {'korean': '필리핀', 'symbol': '₱', 'region': '아시아'},
+    'PKR': {'korean': '파키스탄', 'symbol': '₨', 'region': '아시아'},
+    'PLN': {'korean': '폴란드', 'symbol': 'zł', 'region': '유럽'},
+    'PYG': {'korean': '파라과이', 'symbol': '₲', 'region': '남미'},
+    'QAR': {'korean': '카타르', 'symbol': 'ر.ق', 'region': '중동'},
+    'RON': {'korean': '루마니아', 'symbol': 'lei', 'region': '유럽'},
+    'RSD': {'korean': '세르비아', 'symbol': 'дин.', 'region': '유럽'},
+    'RUB': {'korean': '러시아', 'symbol': '₽', 'region': '유럽'},
+    'RWF': {'korean': '르완다', 'symbol': 'FRw', 'region': '아프리카'},
+    'SAR': {'korean': '사우디아라비아', 'symbol': 'ر.س', 'region': '중동'},
+    'SBD': {'korean': '솔로몬제도', 'symbol': '$', 'region': '오세아니아'},
+    'SCR': {'korean': '세이셀', 'symbol': '₨', 'region': '아프리카'},
+    'SDG': {'korean': '수단', 'symbol': '£', 'region': '아프리카'},
+    'SEK': {'korean': '스웨덴', 'symbol': 'kr', 'region': '유럽'},
+    'SGD': {'korean': '싱가포르', 'symbol': '$', 'region': '아시아'},
+    'SHP': {'korean': '세인트헬레나', 'symbol': '£', 'region': '아프리카'},
+    'SLL': {'korean': '시에라리온', 'symbol': 'Le', 'region': '아프리카'},
+    'SOS': {'korean': '소말리아', 'symbol': 'Sh', 'region': '아프리카'},
+    'SRD': {'korean': '수리남', 'symbol': '$', 'region': '남미'},
+    'SSP': {'korean': '남수단', 'symbol': '£', 'region': '아프리카'},
+    'STN': {'korean': '상투메프린시페', 'symbol': 'Db', 'region': '아프리카'},
+    'SYP': {'korean': '시리아', 'symbol': '£', 'region': '중동'},
+    'SZL': {'korean': '에스와티니', 'symbol': 'E', 'region': '아프리카'},
+    'THB': {'korean': '태국', 'symbol': '฿', 'region': '아시아'},
+    'TJS': {'korean': '타지키스탄', 'symbol': 'ЅМ', 'region': '아시아'},
+    'TMT': {'korean': '투르크메니스탄', 'symbol': 'm', 'region': '아시아'},
+    'TND': {'korean': '튀니지', 'symbol': 'د.ت', 'region': '아프리카'},
+    'TOP': {'korean': '통가', 'symbol': 'T$', 'region': '오세아니아'},
+    'TRY': {'korean': '터키', 'symbol': '₺', 'region': '중동'},
+    'TTD': {'korean': '트리니다드토바고', 'symbol': '$', 'region': '카리브'},
+    'TWD': {'korean': '대만', 'symbol': 'NT$', 'region': '아시아'},
+    'TZS': {'korean': '탄자니아', 'symbol': 'Sh', 'region': '아프리카'},
+    'UAH': {'korean': '우크라이나', 'symbol': '₴', 'region': '유럽'},
+    'UGX': {'korean': '우간다', 'symbol': 'Sh', 'region': '아프리카'},
+    'USD': {'korean': '미국', 'symbol': '$', 'region': '북미'},
+    'UYU': {'korean': '우루과이', 'symbol': '$', 'region': '남미'},
+    'UZS': {'korean': '우즈베키스탄', 'symbol': "so'm", 'region': '아시아'},
+    'VEF': {'korean': '베네수엘라 (구)', 'symbol': 'Bs.', 'region': '남미'},
+    'VES': {'korean': '베네수엘라', 'symbol': 'Bs.S', 'region': '남미'},
+    'VND': {'korean': '베트남', 'symbol': '₫', 'region': '아시아'},
+    'VUV': {'korean': '바누아투', 'symbol': 'VT', 'region': '오세아니아'},
+    'WST': {'korean': '사모아', 'symbol': 'T', 'region': '오세아니아'},
+    'XAF': {'korean': '중앙아프리카CFA', 'symbol': 'FCFA', 'region': '아프리카'},
+    'XCD': {'korean': '동카리브', 'symbol': '$', 'region': '카리브'},
+    'XOF': {'korean': '서아프리카CFA', 'symbol': 'CFA', 'region': '아프리카'},
+    'XPF': {'korean': '태평양CFP', 'symbol': '₣', 'region': '오세아니아'},
+    'YER': {'korean': '예멘', 'symbol': '﷼', 'region': '중동'},
+    'ZAR': {'korean': '남아프리카', 'symbol': 'R', 'region': '아프리카'},
+    'ZMW': {'korean': '잠비아', 'symbol': 'K', 'region': '아프리카'},
+    'ZWL': {'korean': '짐바브웨', 'symbol': 'Z$', 'region': '아프리카'},
+}
+ 
+DEFAULT_ADJUSTMENTS = {
+    'USD': 68.3, 'EUR': 0, 'GBP': 54.0, 'JPY': 39.7, 'CNY': 39.7,
+    'AED': 29.8, 'CAD': 39.7, 'AUD': 30.9, 'NZD': 38.6, 'CHF': 36.4,
+    'SEK': 60.6, 'NOK': 56.2, 'DKK': 60.6, 'HUF': 61.7, 'PLN': 57.3, 'CZK': 55.1,
+}
+ 
+@st.cache_data(ttl=3600)
+def get_exchange_rates_from_api():
+    """exchangerate-api에서 실시간 환율 조회"""
+    try:
+        url = 'https://api.exchangerate-api.com/v4/latest/KRW'
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        rates = response.json()['rates']
+        st.success("✅ 환율 자동 조회 완료")
+        return rates
+    except Exception as e:
+        st.warning(f"⚠️ 환율 조회 실패: {str(e)[:50]}")
+        return None
+ 
+def get_recent_countries():
+    """최근 사용 국가 가져오기"""
+    try:
+        with open('recent_countries.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return []
+ 
+def save_recent_countries(codes):
+    """최근 사용 국가 저장"""
+    try:
+        with open('recent_countries.json', 'w', encoding='utf-8') as f:
+            json.dump(codes, f, ensure_ascii=False)
+    except:
+        pass
+ 
+def make_country_pricing_sheet(product_file, country_list, exchange_rates):
+    """프로덕트 시트에서 기본가격을 읽고 국가별 가격 시트 생성"""
+    from openpyxl import Workbook, load_workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    import io
+    
+    prod_bytes = product_file.read() if hasattr(product_file, 'read') else open(product_file, 'rb').read()
+    wb_prod = load_workbook(io.BytesIO(prod_bytes), data_only=True)
+    ws_prod = wb_prod.active
+    
+    products = []
+    for row in range(4, ws_prod.max_row + 1):
+        cat = ws_prod.cell(row, 1).value
+        prod_name = ws_prod.cell(row, 2).value
+        style_no = ws_prod.cell(row, 3).value
+        color = ws_prod.cell(row, 4).value
+        price_krw = ws_prod.cell(row, 13).value
+        
+        if prod_name and style_no and price_krw:
+            try:
+                price_krw = float(price_krw)
+                products.append({
+                    'category': cat,
+                    'product_name': prod_name,
+                    'style_no': style_no,
+                    'color': color,
+                    'price_krw': price_krw,
+                })
+            except:
+                pass
+    
+    wb_out = Workbook()
+    ws_out = wb_out.active
+    ws_out.title = 'Country Pricing'
+    
+    thin = Side(style='thin')
+    border_all = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    left_align = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    
+    headers = ['Category', 'Product Name', 'Style No.', 'Color', 'Base Price (KRW)']
+    headers += [f"{c['code']} ({c['symbol']})" for c in country_list]
+    
+    for col, header in enumerate(headers, 1):
+        cell = ws_out.cell(row=1, column=col, value=header)
+        cell.font = Font(name='Arial', bold=True, size=10, color='FFFFFF')
+        cell.fill = PatternFill('solid', fgColor='006FC0')
+        cell.alignment = center_align
+        cell.border = border_all
+    
+    ws_out.column_dimensions['A'].width = 15
+    ws_out.column_dimensions['B'].width = 40
+    ws_out.column_dimensions['C'].width = 16
+    ws_out.column_dimensions['D'].width = 20
+    ws_out.column_dimensions['E'].width = 18
+    
+    for col in range(6, 6 + len(country_list)):
+        ws_out.column_dimensions[get_column_letter(col)].width = 16
+    
+    for row_idx, prod in enumerate(products, 2):
+        cell = ws_out.cell(row=row_idx, column=1, value=prod['category'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = left_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=2, value=prod['product_name'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = left_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=3, value=prod['style_no'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = center_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=4, value=prod['color'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = left_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=5, value=int(prod['price_krw']))
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = center_align
+        cell.border = border_all
+        cell.number_format = '#,##0'
+        
+        for col_idx, country in enumerate(country_list, 6):
+            code = country['code']
+            adjustment = country['adjustment']
+            exchange = exchange_rates.get(code, 1.0)
+            
+            price_local = (prod['price_krw'] / exchange) * (1 + adjustment)
+            
+            cell = ws_out.cell(row=row_idx, column=col_idx, value=price_local)
+            cell.font = Font(name='Arial', size=9)
+            cell.alignment = center_align
+            cell.border = border_all
+            cell.number_format = '#,##0.00'
+    
+    buf = io.BytesIO()
+    wb_out.save(buf)
+    buf.seek(0)
+    return buf
+ 
+ 
+def make_single_country_sheet(product_file, country, exchange_rate):
+    """단일 국가별 가격 시트 생성"""
+    from openpyxl import Workbook, load_workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    import io
+    
+    prod_bytes = product_file.read() if hasattr(product_file, 'read') else open(product_file, 'rb').read()
+    wb_prod = load_workbook(io.BytesIO(prod_bytes), data_only=True)
+    ws_prod = wb_prod.active
+    
+    products = []
+    for row in range(4, ws_prod.max_row + 1):
+        cat = ws_prod.cell(row, 1).value
+        prod_name = ws_prod.cell(row, 2).value
+        style_no = ws_prod.cell(row, 3).value
+        color = ws_prod.cell(row, 4).value
+        price_krw = ws_prod.cell(row, 13).value
+        
+        if prod_name and style_no and price_krw:
+            try:
+                price_krw = float(price_krw)
+                products.append({
+                    'category': cat,
+                    'product_name': prod_name,
+                    'style_no': style_no,
+                    'color': color,
+                    'price_krw': price_krw,
+                })
+            except:
+                pass
+    
+    wb_out = Workbook()
+    ws_out = wb_out.active
+    ws_out.title = country['code']
+    
+    thin = Side(style='thin')
+    border_all = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    left_align = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    
+    headers = ['Category', 'Product Name', 'Style No.', 'Color', 'Base Price (KRW)', f"{country['code']} ({country['symbol']})"]
+    
+    for col, header in enumerate(headers, 1):
+        cell = ws_out.cell(row=1, column=col, value=header)
+        cell.font = Font(name='Arial', bold=True, size=11, color='FFFFFF')
+        cell.fill = PatternFill('solid', fgColor='006FC0')
+        cell.alignment = center_align
+        cell.border = border_all
+    
+    ws_out.column_dimensions['A'].width = 15
+    ws_out.column_dimensions['B'].width = 40
+    ws_out.column_dimensions['C'].width = 16
+    ws_out.column_dimensions['D'].width = 20
+    ws_out.column_dimensions['E'].width = 18
+    ws_out.column_dimensions['F'].width = 18
+    
+    for row_idx, prod in enumerate(products, 2):
+        cell = ws_out.cell(row=row_idx, column=1, value=prod['category'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = left_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=2, value=prod['product_name'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = left_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=3, value=prod['style_no'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = center_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=4, value=prod['color'])
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = left_align
+        cell.border = border_all
+        
+        cell = ws_out.cell(row=row_idx, column=5, value=int(prod['price_krw']))
+        cell.font = Font(name='Arial', size=9)
+        cell.alignment = center_align
+        cell.border = border_all
+        cell.number_format = '#,##0'
+        
+        adjustment = country['adjustment']
+        price_local = (prod['price_krw'] / exchange_rate) * (1 + adjustment)
+        
+        cell = ws_out.cell(row=row_idx, column=6, value=price_local)
+        cell.font = Font(name='Arial', size=9, bold=True, color='006FC0')
+        cell.alignment = center_align
+        cell.border = border_all
+        cell.number_format = '#,##0.00'
+    
+    buf = io.BytesIO()
+    wb_out.save(buf)
+    buf.seek(0)
+    return buf
+ 
+ 
 # ── TAB 4: 국가별 가격 생성기
 with tab4:
     st.caption("🌍 프로덕트 시트 + 실시간 환율 + 조정비율 → 국가별 가격 시트 자동 생성")
@@ -1856,61 +2273,46 @@ with tab4:
             api_rates = get_exchange_rates_from_api()
             if api_rates:
                 st.session_state['api_rates'] = api_rates
-                st.info(f"✅ {len(api_rates)}개 국가 환율 로드됨")
     
     st.divider()
     
     if pricing_product_file:
-        st.subheader("🔍 국가 검색 및 선택")
+        st.subheader("🔍 국가 선택 (검색 가능)")
         
-        # 검색 박스
-        search_query = st.text_input(
-            "국가명 또는 통화 코드로 검색 (예: 미국, USD, 일본, JPY)",
-            placeholder="검색...",
-            key="country_search"
+        # 최근 사용 국가 로드
+        recent_countries = get_recent_countries()
+        recent_display = []
+        if recent_countries:
+            recent_display = [f"⭐ {code} - {COUNTRY_DATA[code]['korean']}" for code in recent_countries if code in COUNTRY_DATA]
+        
+        # 모든 국가 목록
+        all_countries = [f"{code} - {COUNTRY_DATA[code]['korean']}" for code in sorted(COUNTRY_DATA.keys())]
+        
+        # 선택지 구성
+        options = recent_display + all_countries if recent_display else all_countries
+        
+        # 멀티셀렉트 (검색 가능)
+        selected = st.multiselect(
+            "국가명, 통화 코드, 또는 지역으로 검색",
+            options=options,
+            key="country_multiselect",
+            placeholder="검색..."
         )
         
-        # 필터링
-        filtered_countries = {}
-        for code, data in COUNTRY_DATA.items():
-            korean_name = data['korean']
-            if search_query.lower() in code.lower() or \
-               search_query in korean_name or \
-               code.lower() in search_query.lower():
-                filtered_countries[code] = data
-        
-        # 검색 결과가 없으면 전체 표시
-        if not search_query:
-            filtered_countries = COUNTRY_DATA
-        
-        st.caption(f"📊 검색 결과: {len(filtered_countries)}개국")
-        
-        # 체크박스로 국가 선택
+        # 선택된 국가 코드 추출
         selected_codes = []
-        cols = st.columns(4)
-        col_idx = 0
-        
-        for code in sorted(filtered_countries.keys()):
-            data = filtered_countries[code]
-            with cols[col_idx % 4]:
-                if st.checkbox(
-                    f"{code} - {data['korean']} ({data['symbol']})",
-                    key=f"country_{code}"
-                ):
-                    selected_codes.append(code)
-            col_idx += 1
+        for item in selected:
+            code = item.split(' - ')[0].replace('⭐ ', '').strip()
+            if code in COUNTRY_DATA:
+                selected_codes.append(code)
         
         if selected_codes:
             st.success(f"✅ {len(selected_codes)}개 국가 선택됨: {', '.join(selected_codes)}")
-        else:
-            st.warning("⚠️ 최소 1개 국가를 선택해주세요.")
-        
-        st.divider()
-        
-        if selected_codes:
+            
+            st.divider()
+            
             st.subheader("💱 환율 및 조정비율 설정")
             
-            # API 환율 로드
             api_rates = st.session_state.get('api_rates')
             
             rates = {}
@@ -1921,21 +2323,21 @@ with tab4:
             for idx, code in enumerate(selected_codes):
                 with cols[idx]:
                     data = COUNTRY_DATA[code]
-                    st.write(f"**{code}** - {data['korean']}")
+                    st.write(f"**{code}**")
+                    st.caption(data['korean'])
                     
                     # 기본값: API 환율 또는 수동입력
                     default_rate = 1.0
                     if api_rates and code in api_rates:
                         default_rate = api_rates[code]
-                        st.caption(f"📊 API 환율: {default_rate:.4f}")
+                        st.caption(f"📊 {default_rate:.2f}")
                     
                     rates[code] = st.number_input(
-                        f"환율 (KRW/1{code})",
+                        f"환율",
                         value=float(default_rate),
                         step=0.1,
                         key=f"rate_{code}",
-                        label_visibility="collapsed",
-                        help=f"1 {code} = ? KRW"
+                        label_visibility="collapsed"
                     )
                     
                     default_adj = DEFAULT_ADJUSTMENTS.get(code, 0)
@@ -1944,8 +2346,7 @@ with tab4:
                         value=int(default_adj),
                         step=1,
                         key=f"adj_{code}",
-                        label_visibility="collapsed",
-                        help="조정 비율 (%)"
+                        label_visibility="collapsed"
                     )
                     adjustments[code] = adj_pct / 100
             
@@ -1954,7 +2355,7 @@ with tab4:
             col_btn1, col_btn2 = st.columns([1, 1])
             
             with col_btn1:
-                if st.button("📊 통합 시트 생성 (모든 국가)", use_container_width=True, type="primary"):
+                if st.button("📊 통합 시트 생성", use_container_width=True, type="primary"):
                     with st.spinner("국가별 가격 계산 중..."):
                         try:
                             country_data = []
@@ -1972,6 +2373,9 @@ with tab4:
                                 country_data,
                                 rates
                             )
+                            
+                            # 최근 사용 국가 저장
+                            save_recent_countries(selected_codes)
                             
                             st.success("✅ 통합 시트 생성 완료!")
                             
@@ -1991,7 +2395,7 @@ with tab4:
                             st.code(traceback.format_exc())
             
             with col_btn2:
-                if st.button("🌍 국가별 개별 시트 생성", use_container_width=True, type="secondary"):
+                if st.button("🌍 개별 시트 생성", use_container_width=True, type="secondary"):
                     with st.spinner("국가별 시트 생성 중..."):
                         try:
                             date_str = datetime.now().strftime("%Y%m%d")
@@ -2018,9 +2422,12 @@ with tab4:
                                     'filename': f"Pricing_{code}_{date_str}.xlsx"
                                 })
                             
+                            # 최근 사용 국가 저장
+                            save_recent_countries(selected_codes)
+                            
                             st.success(f"✅ {len(individual_files)}개 국가 시트 생성 완료!")
                             
-                            st.subheader("📥 국가별 다운로드")
+                            st.subheader("📥 다운로드")
                             cols = st.columns(len(individual_files))
                             
                             for idx, file_info in enumerate(individual_files):
@@ -2037,8 +2444,10 @@ with tab4:
                             st.error(f"❌ 오류: {e}")
                             import traceback
                             st.code(traceback.format_exc())
+        else:
+            st.info("👆 국가를 선택해주세요.")
     else:
         st.info("👆 프로덕트 시트 파일을 업로드해주세요.")
-
+ 
 st.divider()
-st.caption("💡 팁: 🔄 실시간 환율 조회 버튼으로 API에서 환율을 불러올 수 있습니다. 원하는 값으로 수정 가능합니다!")
+st.caption("💡 팁: ⭐ 마크가 붙은 국가는 최근에 사용한 국가입니다. 🔄 환율 조회로 자동 반영되며 수정 가능합니다!")
