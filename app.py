@@ -848,8 +848,12 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
     if hq_csv_file is not None:
         df_hq = pd.read_csv(hq_csv_file, encoding='utf-8-sig')
         df_hq['현재고'] = pd.to_numeric(df_hq['현재고'], errors='coerce').fillna(0).astype(int)
+        
+        # Size 컬럼명 결정 (영문 또는 한글)
+        size_col = 'Size' if 'Size' in df_hq.columns else '사이즈'
+        
         for _, r in df_hq.iterrows():
-            hq_lookup[(_get_base(r['SKU']), str(r['Size']).strip().upper())] = r['현재고']
+            hq_lookup[(_get_base(r['SKU']), str(r[size_col]).strip().upper())] = r['현재고']
 
     def calc_shipout(row):
         # 제외 컬럼이 있으면 먼저 확인
