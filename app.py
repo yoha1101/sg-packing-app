@@ -819,17 +819,11 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
     exclude_sku_list = []
     try:
         import os
-        # 먼저 업로드된 파일이 있는지 확인
-        if 'exclude_list' in st.session_state:
-            df_exclude = pd.read_csv(io.BytesIO(st.session_state['exclude_list']), encoding='utf-8-sig')
-            if 'SKU' in df_exclude.columns and '풍류_제외칼럼' in df_exclude.columns:
-                exclude_sku_list = [str(sku).strip().upper() for sku, val in 
-                                   zip(df_exclude['SKU'], df_exclude['풍류_제외칼럼']) 
-                                   if pd.notna(val) and str(val).strip().upper() == 'Y']
-                st.info(f"✅ 풍류 제외 목록: {len(exclude_sku_list)}개 SKU 인식됨")
-        # 아니면 로컬 파일 읽기 시도
-        elif os.path.exists('exclude_list.csv'):
-            df_exclude = pd.read_csv('exclude_list.csv', encoding='utf-8-sig')
+        exclude_path = 'exclude_list.csv'
+        
+        # 로컬 파일 우선
+        if os.path.exists(exclude_path):
+            df_exclude = pd.read_csv(exclude_path, encoding='utf-8-sig')
             if 'SKU' in df_exclude.columns and '풍류_제외칼럼' in df_exclude.columns:
                 exclude_sku_list = [str(sku).strip().upper() for sku, val in 
                                    zip(df_exclude['SKU'], df_exclude['풍류_제외칼럼']) 
@@ -1392,15 +1386,19 @@ with tab3:
             "① 입고 양식 Excel (.xlsx) — 원본 그대로 업로드",
             type=['xlsx'], key="tab3_template"
         )
-        # 입고 양식 자동 기억
+        # 입고 양식 자동 저장 (로컬 파일)
         if template_file_tab3:
+            import os
+            template_path = 'template_file.xlsx'
             template_bytes = template_file_tab3.read()
-            st.session_state['template_file'] = template_bytes
-            st.success("✅ 입고 양식 저장 완료!")
+            with open(template_path, 'wb') as f:
+                f.write(template_bytes)
+            st.success("✅ 입고 양식 저장 완료! (계속 사용됨)")
         
-        # 저장된 입고 양식이 있으면 사용
-        if 'template_file' not in st.session_state and not template_file_tab3:
-            st.info("💡 입고 양식을 첫 1회 업로드하면 계속 사용됩니다")
+        # 저장된 입고 양식이 있으면 표시
+        import os
+        if os.path.exists('template_file.xlsx') and not template_file_tab3:
+            st.caption("💾 저장된 입고 양식 사용 중...")
         stock_file_tab3 = st.file_uploader(
             "② 매장 재고현황 Excel (.xlsx)",
             type=['xlsx'], key="tab3_stock"
@@ -1420,12 +1418,11 @@ with tab3:
     # 제외 목록 파일이 업로드되면 자동 저장
     if exclude_file_tab3:
         import os
-        exclude_file_path = 'exclude_list.csv'
+        exclude_path = 'exclude_list.csv'
         exclude_bytes = exclude_file_tab3.read()
-        with open(exclude_file_path, 'wb') as f:
+        with open(exclude_path, 'wb') as f:
             f.write(exclude_bytes)
-        st.success(f"✅ 풍류 제외 목록 업데이트 완료!")
-        st.session_state['exclude_list'] = exclude_bytes
+        st.success(f"✅ 풍류 제외 목록 업데이트 완료! (계속 사용됨)")
     
     with col2:
         st.subheader("⚙️ 목표 재고")
@@ -1447,10 +1444,12 @@ with tab3:
 
     st.divider()
     
-    # 입고 양식 결정 (업로드된 파일 또는 저장된 파일)
+    # 입고 양식 결정 (업로드된 파일 > 로컬 저장 파일)
     template_to_use = template_file_tab3
-    if not template_to_use and 'template_file' in st.session_state:
-        template_to_use = io.BytesIO(st.session_state['template_file'])
+    if not template_to_use:
+        import os
+        if os.path.exists('template_file.xlsx'):
+            template_to_use = open('template_file.xlsx', 'rb')
     
     if stock_file_tab3 and template_to_use:
         with st.spinner("재고 분석 및 양식 채우는 중..."):
