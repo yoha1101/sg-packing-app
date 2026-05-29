@@ -810,6 +810,33 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
     from openpyxl.utils import get_column_letter
 
     stock = pd.read_excel(stock_file)
+    
+    # 풍류_제외 컬럼이 없으면 자동 추가
+    if '풍류_제외' not in stock.columns:
+        stock['풍류_제외'] = ''
+    
+    # 제외 목록 파일 자동 읽기 및 SKU 매칭
+    exclude_sku_list = []
+    try:
+        import os
+        exclude_file_path = '/mnt/user-data/outputs/제품리스트_2026-05-29.csv'
+        if os.path.exists(exclude_file_path):
+            df_exclude = pd.read_csv(exclude_file_path, encoding='utf-8-sig')
+            if 'SKU' in df_exclude.columns and '풍류_제외칼럼' in df_exclude.columns:
+                # 풍류_제외칼럼에 Y가 있는 SKU만 추출
+                exclude_sku_list = [str(sku).strip().upper() for sku, val in 
+                                   zip(df_exclude['SKU'], df_exclude['풍류_제외칼럼']) 
+                                   if pd.notna(val) and str(val).strip().upper() == 'Y']
+                st.info(f"✅ 풍류 제외 목록: {len(exclude_sku_list)}개 SKU 인식됨")
+    except Exception as e:
+        pass
+    
+    # 제외 SKU 목록으로 풍류_제외 컬럼 자동 채우기
+    if exclude_sku_list:
+        stock['풍류_제외'] = stock['자사코드'].apply(
+            lambda x: 'Y' if str(x).strip().upper() in exclude_sku_list else ''
+        )
+    
     stock['컬러']       = stock['상품명'].apply(_extr_color)
     stock['제품그룹']   = stock['상품명'].apply(_extr_base)
     stock['사이즈']     = stock['옵션명'].fillna('FREE').astype(str).str.strip()
