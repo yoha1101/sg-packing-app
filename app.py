@@ -1395,6 +1395,20 @@ with tab3:
             type=['csv'], key="tab3_hq"
         )
         st.caption("📌 컬럼 필수: SKU / Size / 현재고  (재고 없는 항목은 빈 값도 OK)")
+        exclude_file_tab3 = st.file_uploader(
+            "④ 풍류 제외 목록 CSV (.csv) — 선택사항",
+            type=['csv'], key="tab3_exclude"
+        )
+        st.caption("📌 컬럼 필수: SKU / 풍류_제외칼럼 (Y 표시된 항목만 제외)")
+    
+    # 제외 목록 파일이 업로드되면 자동 저장
+    if exclude_file_tab3:
+        exclude_file_path = '/mnt/user-data/outputs/제품리스트_2026-05-29.csv'
+        exclude_bytes = exclude_file_tab3.read()
+        with open(exclude_file_path, 'wb') as f:
+            f.write(exclude_bytes)
+        st.success(f"✅ 풍류 제외 목록 업데이트 완료!")
+    
     with col2:
         st.subheader("⚙️ 목표 재고")
         target_qty_pungryoo = st.number_input(
