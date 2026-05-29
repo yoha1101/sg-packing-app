@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 
 st.set_page_config(page_title="SG Export Document Generator", layout="centered")
-st.title("📦 SPECIALGUEST Export Document Generator")
+st.title("📦 SPECIALGUEST®")
 
 CBM_PER_BOX = 0.088
 
