@@ -1392,6 +1392,15 @@ with tab3:
             "① 입고 양식 Excel (.xlsx) — 원본 그대로 업로드",
             type=['xlsx'], key="tab3_template"
         )
+        # 입고 양식 자동 기억
+        if template_file_tab3:
+            template_bytes = template_file_tab3.read()
+            st.session_state['template_file'] = template_bytes
+            st.success("✅ 입고 양식 저장 완료!")
+        
+        # 저장된 입고 양식이 있으면 사용
+        if 'template_file' not in st.session_state and not template_file_tab3:
+            st.info("💡 입고 양식을 첫 1회 업로드하면 계속 사용됩니다")
         stock_file_tab3 = st.file_uploader(
             "② 매장 재고현황 Excel (.xlsx)",
             type=['xlsx'], key="tab3_stock"
@@ -1437,13 +1446,18 @@ with tab3:
         )
 
     st.divider()
-
-    if stock_file_tab3 and template_file_tab3:
+    
+    # 입고 양식 결정 (업로드된 파일 또는 저장된 파일)
+    template_to_use = template_file_tab3
+    if not template_to_use and 'template_file' in st.session_state:
+        template_to_use = io.BytesIO(st.session_state['template_file'])
+    
+    if stock_file_tab3 and template_to_use:
         with st.spinner("재고 분석 및 양식 채우는 중..."):
             try:
                 # ──── 풍류 시트 생성
                 buf_pungryoo, df_pungryoo = make_restock_output(
-                    stock_file_tab3, template_file_tab3,
+                    stock_file_tab3, template_to_use,
                     hq_csv_file=hq_file_tab3,
                     target_qty=target_qty_pungryoo,
                     hq_min=hq_min_tab3,
@@ -1458,7 +1472,7 @@ with tab3:
 
                 # ──── 911 시트 생성
                 buf_911, df_911 = make_restock_output(
-                    stock_file_tab3, template_file_tab3,
+                    stock_file_tab3, template_to_use,
                     hq_csv_file=hq_file_tab3,
                     target_qty=target_qty_911,
                     hq_min=hq_min_tab3,
