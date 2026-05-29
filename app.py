@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 
 st.set_page_config(page_title="SG Export Document Generator", layout="centered")
-st.title("📦 SPECIALGUEST®")
+st.title("📦 SPECIALGUEST Export Document Generator")
 
 CBM_PER_BOX = 0.088
 
@@ -804,7 +804,7 @@ def _get_base(sku):
             return str(sku)[:-len(sz)].upper()
     return str(sku).upper()
 
-def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=2, hq_min=1):
+def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=2, hq_min=1, store_column="[매장] 오프라인_911스포츠", exclude_column=None):
     from openpyxl import Workbook
     from openpyxl.cell.cell import MergedCell as _MergedCell
     from openpyxl.utils import get_column_letter
@@ -813,7 +813,7 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
     stock['컬러']       = stock['상품명'].apply(_extr_color)
     stock['제품그룹']   = stock['상품명'].apply(_extr_base)
     stock['사이즈']     = stock['옵션명'].fillna('FREE').astype(str).str.strip()
-    stock['현재고']     = stock['[매장] 오프라인_911스포츠'].fillna(0).astype(int)
+    stock['현재고']     = stock[store_column].fillna(0).astype(int)
     stock['영문품목명'] = stock['제품그룹'].map(KR_TO_EN_911)
 
     hq_lookup = {}
@@ -824,6 +824,12 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
             hq_lookup[(_get_base(r['SKU']), str(r['Size']).strip().upper())] = r['현재고']
 
     def calc_shipout(row):
+        # 제외 컬럼이 있으면 먼저 확인
+        if exclude_column and exclude_column in stock.columns:
+            exclude_val = str(row.get(exclude_column, '')).strip().upper()
+            if exclude_val in ['Y', '1', 'TRUE']:
+                return 0
+        
         q911 = row['현재고']
         sz   = str(row['사이즈']).strip().upper()
         base = _get_base(str(row['자사코드']))
@@ -1340,36 +1346,41 @@ with tab2:
                 st.error(f"❌ 오류: {e}"); import traceback; st.code(traceback.format_exc())
         else: st.info("👆 현재고가 채워진 제품 시트 Excel을 업로드해주세요.")
 
-# ── TAB 3: 911스포츠 입고 출고서
+# ── TAB 3: 풍류 / 911스포츠 입고 출고서
 with tab3:
-    st.caption("911 매장재고 + 본사재고 기준으로 부족분 자동 계산 → 입고 양식 출력")
+    st.caption("풍류 + 911 각각 재고 분석 후 입고 양식 생성 (매장재고 + 본사재고 기준)")
     st.divider()
 
     col1, col2 = st.columns([2, 1])
     with col1:
         st.subheader("📁 파일 업로드")
-        template_file_911 = st.file_uploader(
+        template_file_tab3 = st.file_uploader(
             "① 입고 양식 Excel (.xlsx) — 원본 그대로 업로드",
             type=['xlsx'], key="tab3_template"
         )
-        stock_file_911 = st.file_uploader(
+        stock_file_tab3 = st.file_uploader(
             "② 매장 재고현황 Excel (.xlsx)",
             type=['xlsx'], key="tab3_stock"
         )
-        st.caption("📌 컬럼 필수: 자사코드 / 상품명 / 옵션명 / **[매장] 오프라인_911스포츠**")
-        hq_file_911 = st.file_uploader(
+        st.caption("📌 컬럼 필수: 자사코드 / 상품명 / 옵션명 / [매장] 오프라인_풍류 / [매장] 오프라인_911스포츠")
+        hq_file_tab3 = st.file_uploader(
             "③ 본사 재고 CSV (.csv)",
             type=['csv'], key="tab3_hq"
         )
         st.caption("📌 컬럼 필수: SKU / Size / 현재고  (재고 없는 항목은 빈 값도 OK)")
     with col2:
-        st.subheader("⚙️ 설정")
-        target_qty_911 = st.number_input(
-            "목표 재고 수량", min_value=1, max_value=10, value=2, step=1,
-            key="tab3_target",
-            help="각 SKU를 이 수량까지 채우는 것을 목표로 합니다"
+        st.subheader("⚙️ 목표 재고")
+        target_qty_pungryoo = st.number_input(
+            "풍류 목표 재고 수량", min_value=1, max_value=10, value=1, step=1,
+            key="tab3_target_pungryoo",
+            help="풍류 각 SKU를 이 수량까지 채우는 것을 목표"
         )
-        hq_min_911 = st.number_input(
+        target_qty_911 = st.number_input(
+            "911스포츠 목표 재고 수량", min_value=1, max_value=10, value=2, step=1,
+            key="tab3_target_911",
+            help="911 각 SKU를 이 수량까지 채우는 것을 목표"
+        )
+        hq_min_tab3 = st.number_input(
             "본사 최소 잔류 수량", min_value=0, max_value=10, value=1, step=1,
             key="tab3_hq_min",
             help="출고 후 본사에 최소 이 수량은 남겨둡니다"
@@ -1377,59 +1388,105 @@ with tab3:
 
     st.divider()
 
-    if stock_file_911 and template_file_911:
+    if stock_file_tab3 and template_file_tab3:
         with st.spinner("재고 분석 및 양식 채우는 중..."):
             try:
-                buf_911, df_911 = make_restock_output(
-                    stock_file_911, template_file_911,
-                    hq_csv_file=hq_file_911,
-                    target_qty=target_qty_911,
-                    hq_min=hq_min_911
+                # ──── 풍류 시트 생성
+                buf_pungryoo, df_pungryoo = make_restock_output(
+                    stock_file_tab3, template_file_tab3,
+                    hq_csv_file=hq_file_tab3,
+                    target_qty=target_qty_pungryoo,
+                    hq_min=hq_min_tab3,
+                    store_column="[매장] 오프라인_풍류",
+                    exclude_column="풍류_제외"
                 )
-                df_need        = df_911[df_911['출고수량'] > 0]
-                df_full        = df_911[df_911['출고수량'] == 0]
-                total_out_911  = int(df_need['출고수량'].sum())
-                sku_out_count  = len(df_need)
-                sku_full_count = len(df_full)
+                df_need_pr = df_pungryoo[df_pungryoo['출고수량'] > 0]
+                df_full_pr = df_pungryoo[df_pungryoo['출고수량'] == 0]
+                total_out_pr = int(df_need_pr['출고수량'].sum())
+                sku_out_pr = len(df_need_pr)
+                sku_full_pr = len(df_full_pr)
 
+                # ──── 911 시트 생성
+                buf_911, df_911 = make_restock_output(
+                    stock_file_tab3, template_file_tab3,
+                    hq_csv_file=hq_file_tab3,
+                    target_qty=target_qty_911,
+                    hq_min=hq_min_tab3,
+                    store_column="[매장] 오프라인_911스포츠"
+                )
+                df_need_911 = df_911[df_911['출고수량'] > 0]
+                df_full_911 = df_911[df_911['출고수량'] == 0]
+                total_out_911 = int(df_need_911['출고수량'].sum())
+                sku_out_911 = len(df_need_911)
+                sku_full_911 = len(df_full_911)
+
+                st.subheader("🏪 풍류")
                 c1, c2, c3 = st.columns(3)
-                c1.metric("총 출고 수량", f"{total_out_911}pcs")
-                c2.metric("출고 필요 SKU", f"{sku_out_count}건")
-                c3.metric("재고 충족 SKU", f"{sku_full_count}건")
+                c1.metric("총 출고 수량", f"{total_out_pr}pcs")
+                c2.metric("출고 필요 SKU", f"{sku_out_pr}건")
+                c3.metric("재고 충족 SKU", f"{sku_full_pr}건")
 
-                with st.expander("📊 품목별 출고 수량 요약"):
-                    summary_911 = (
-                        df_need.groupby('영문품목명')['출고수량']
-                        .sum().reset_index()
-                        .rename(columns={'영문품목명':'품목명','출고수량':'출고수량합계'})
-                        .sort_values('품목명')
-                    )
-                    st.dataframe(summary_911, use_container_width=True, hide_index=True)
-
-                with st.expander("✅ 재고 충족 SKU (출고 불필요)"):
-                    full_items = df_full[['영문품목명','컬러','사이즈','현재고']].rename(columns={'영문품목명':'품목명'})
-                    st.dataframe(full_items, use_container_width=True, hide_index=True)
+                with st.expander("📊 풍류 - 품목별 출고 수량", expanded=False):
+                    if len(df_need_pr) > 0:
+                        summary_pr = (
+                            df_need_pr.groupby('영문품목명')['출고수량']
+                            .sum().reset_index()
+                            .rename(columns={'영문품목명':'품목명','출고수량':'출고수량합계'})
+                            .sort_values('품목명')
+                        )
+                        st.dataframe(summary_pr, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("출고 필요 항목 없음")
 
                 st.divider()
-                tpl_name = template_file_911.name.replace('.xlsx','')
-                date_911 = datetime.now().strftime("%Y%m%d")
-                st.download_button(
-                    "⬇️ 완성된 입고 양식 다운로드",
-                    data=buf_911,
-                    file_name=f"{tpl_name}_출고수량입력_{date_911}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    type="primary"
-                )
+                st.subheader("🛍️ 911스포츠")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("총 출고 수량", f"{total_out_911}pcs")
+                c2.metric("출고 필요 SKU", f"{sku_out_911}건")
+                c3.metric("재고 충족 SKU", f"{sku_full_911}건")
+
+                with st.expander("📊 911 - 품목별 출고 수량", expanded=False):
+                    if len(df_need_911) > 0:
+                        summary_911 = (
+                            df_need_911.groupby('영문품목명')['출고수량']
+                            .sum().reset_index()
+                            .rename(columns={'영문품목명':'품목명','출고수량':'출고수량합계'})
+                            .sort_values('품목명')
+                        )
+                        st.dataframe(summary_911, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("출고 필요 항목 없음")
+
+                st.divider()
+                st.subheader("⬇️ 파일 다운로드")
+                tpl_name = template_file_tab3.name.replace('.xlsx','')
+                date_str = datetime.now().strftime("%Y%m%d")
+
+                col_dl1, col_dl2 = st.columns(2)
+                with col_dl1:
+                    st.download_button(
+                        "🏪 풍류용 입고 양식",
+                        data=buf_pungryoo,
+                        file_name=f"{tpl_name}_풍류_{date_str}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                with col_dl2:
+                    st.download_button(
+                        "🛍️ 911스포츠용 입고 양식",
+                        data=buf_911,
+                        file_name=f"{tpl_name}_911스포츠_{date_str}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
 
             except Exception as e:
                 st.error(f"❌ 오류: {e}")
                 import traceback
                 st.code(traceback.format_exc())
-    elif stock_file_911 and not template_file_911:
+    elif stock_file_tab3 and not template_file_tab3:
         st.warning("① 입고 양식 파일도 업로드해주세요.")
-    elif template_file_911 and not stock_file_911:
+    elif template_file_tab3 and not stock_file_tab3:
         st.warning("② 매장 재고현황 파일도 업로드해주세요.")
     else:
         st.info("👆 입고 양식과 매장 재고현황 파일을 모두 업로드해주세요.")
-
