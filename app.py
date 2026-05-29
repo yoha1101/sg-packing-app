@@ -819,11 +819,18 @@ def make_restock_output(stock_file, template_file, hq_csv_file=None, target_qty=
     exclude_sku_list = []
     try:
         import os
-        exclude_file_path = '/mnt/user-data/outputs/제품리스트_2026-05-29.csv'
-        if os.path.exists(exclude_file_path):
-            df_exclude = pd.read_csv(exclude_file_path, encoding='utf-8-sig')
+        # 먼저 업로드된 파일이 있는지 확인
+        if 'exclude_list' in st.session_state:
+            df_exclude = pd.read_csv(io.BytesIO(st.session_state['exclude_list']), encoding='utf-8-sig')
             if 'SKU' in df_exclude.columns and '풍류_제외칼럼' in df_exclude.columns:
-                # 풍류_제외칼럼에 Y가 있는 SKU만 추출
+                exclude_sku_list = [str(sku).strip().upper() for sku, val in 
+                                   zip(df_exclude['SKU'], df_exclude['풍류_제외칼럼']) 
+                                   if pd.notna(val) and str(val).strip().upper() == 'Y']
+                st.info(f"✅ 풍류 제외 목록: {len(exclude_sku_list)}개 SKU 인식됨")
+        # 아니면 로컬 파일 읽기 시도
+        elif os.path.exists('exclude_list.csv'):
+            df_exclude = pd.read_csv('exclude_list.csv', encoding='utf-8-sig')
+            if 'SKU' in df_exclude.columns and '풍류_제외칼럼' in df_exclude.columns:
                 exclude_sku_list = [str(sku).strip().upper() for sku, val in 
                                    zip(df_exclude['SKU'], df_exclude['풍류_제외칼럼']) 
                                    if pd.notna(val) and str(val).strip().upper() == 'Y']
@@ -1403,11 +1410,13 @@ with tab3:
     
     # 제외 목록 파일이 업로드되면 자동 저장
     if exclude_file_tab3:
-        exclude_file_path = '/mnt/user-data/outputs/제품리스트_2026-05-29.csv'
+        import os
+        exclude_file_path = 'exclude_list.csv'
         exclude_bytes = exclude_file_tab3.read()
         with open(exclude_file_path, 'wb') as f:
             f.write(exclude_bytes)
         st.success(f"✅ 풍류 제외 목록 업데이트 완료!")
+        st.session_state['exclude_list'] = exclude_bytes
     
     with col2:
         st.subheader("⚙️ 목표 재고")
